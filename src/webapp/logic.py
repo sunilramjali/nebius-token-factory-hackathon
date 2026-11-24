@@ -71,6 +71,7 @@ TEXT = {
     ),
     "form_name": "Your name",
     "form_address": "The home's address",
+    "form_address_known": "Address from your list: {address}",
     "form_phone": "Phone (optional)",
     "form_fill": "Fill in the message",
     "open_email": "Open in your email app",
@@ -307,3 +308,21 @@ def follow_ups(calls: list[dict[str, Any]], toolbox: Toolbox) -> list[dict[str, 
             seen.add(key)
             unique.append(f)
     return unique[:MAX_FOLLOW_UPS]
+
+
+def typed_addresses(resolved: list[Resolved]) -> dict[str, str]:
+    """UPRN -> the address the landlord typed for that home, to fill their messages.
+
+    Only the landlord's own text: never the register's address (licence-restricted,
+    docs/data_access.md §3). Rows added by UPRN alone have no typed address.
+    """
+    out = {}
+    for r in resolved:
+        if r.status not in ("matched", "given") or r.uprn is None or not r.row.address:
+            continue
+        address = r.row.address
+        pc = r.row.postcode
+        if pc and pc.replace(" ", "").lower() not in address.replace(" ", "").lower():
+            address = f"{address}, {pc}"
+        out[str(r.uprn)] = address
+    return out

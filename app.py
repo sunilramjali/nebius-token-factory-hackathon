@@ -46,6 +46,7 @@ from webapp.logic import (
     rows_from_entries,
     table_rows,
     text,
+    typed_addresses,
 )
 
 load_dotenv()
@@ -104,18 +105,26 @@ def check(entries: list[dict]) -> None:
         if r.uprn is not None and str(r.uprn) in toolbox.missing:
             r.status = "no_data"
     st.session_state.toolbox = toolbox
+    st.session_state.home_addresses = typed_addresses(resolved)  # what the landlord typed
     st.session_state.chat = []
     st.session_state.pop("bot", None)
 
 
 def draft_box(d: dict, key: str) -> None:
     """A draft quote request with a short form. The landlord's details stay in the app:
-    they fill the placeholders here and are never sent to the AI."""
+    they fill the placeholders here and are never sent to the AI. The address is the one the
+    landlord typed for this home, so it isn't asked again (never the register's address)."""
+    p = ss.toolbox.home(d.get("home", ""))
+    known = ss.get("home_addresses", {}).get(p.property_id, "") if p else ""
     with st.form(key, border=False):
         c1, c2 = st.columns(2)
         name = c1.text_input(t("form_name"), key=f"{key}_name")
         phone = c2.text_input(t("form_phone"), key=f"{key}_phone")
-        address = st.text_input(t("form_address"), key=f"{key}_address")
+        if known:
+            address = known
+            st.caption(t("form_address_known", address=known))
+        else:
+            address = st.text_input(t("form_address"), key=f"{key}_address")
         st.form_submit_button(t("form_fill"))
     body = fill_draft(d["body"], name, address, phone)
     st.code(f"Subject: {d['subject']}\n\n{body}", language=None)  # has a copy button

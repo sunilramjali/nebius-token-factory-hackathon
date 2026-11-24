@@ -26,7 +26,8 @@ ODD = Policy(70, 12_345, date(2028, 1, 2), 7, compliance_deadline=date(2031, 3, 
 
 @pytest.mark.parametrize("key", sorted(TEXT))
 def test_ui_text_follows_style_guide(key):
-    t = text(key, POLICY, n=10, home="Home 1", who="an accredited energy assessor")
+    t = text(key, POLICY, n=10, home="Home 1", who="an accredited energy assessor",
+             address="Flat 2, 15 Example Road, E99 9ZZ")  # fmt: skip
     for s in sentences(t):
         assert len(s.split()) <= MAX_WORDS, s
     for pat in BANNED + LEGAL_PATTERNS:
@@ -192,3 +193,19 @@ def test_nicknames_from_property_type_never_addresses():
     assert nicknames(["flat", "house", "flat", None, "maisonette"]) == [
         "Flat A", "House A", "Flat B", "Home A", "Maisonette A"
     ]  # fmt: skip
+
+
+def test_typed_addresses_use_only_what_the_landlord_typed():
+    from lookup.portfolio import PortfolioRow, Resolved
+    from webapp.logic import typed_addresses
+
+    typed = Resolved(PortfolioRow(1, "Flat 2, 15 Example Road", "E99 9ZZ", "Mine", None),
+                     "matched", 11, options=[(11, "FLAT 2 REGISTER ADDRESS")])  # fmt: skip
+    has_pc = Resolved(
+        PortfolioRow(2, "3 Example Road E99 9ZZ", "E99 9ZZ", "B", None), "matched", 12
+    )
+    by_uprn = Resolved(PortfolioRow(3, "", None, "C", 13), "given", 13)
+    unmatched = Resolved(PortfolioRow(4, "9 Nowhere", None, "D", None), "no_match", None)
+    out = typed_addresses([typed, has_pc, by_uprn, unmatched])
+    assert out == {"11": "Flat 2, 15 Example Road, E99 9ZZ", "12": "3 Example Road E99 9ZZ"}
+    assert "REGISTER" not in str(out)
