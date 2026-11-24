@@ -218,3 +218,17 @@ def test_demo_details_are_fictional():
     # Ofcom's drama range (07700 900000-900999): can never reach a real person.
     assert DEMO_LANDLORD["phone"].replace(" ", "").startswith("07700900")
     assert 0 <= int(DEMO_LANDLORD["phone"].replace(" ", "")[-3:]) <= 999
+
+
+def test_chat_panel_css_has_no_empty_gap_and_stays_in_view():
+    # Regression: the message box kept its fixed 560px even with one answer, leaving a gap
+    # above the next steps. Streamlit fixes the wrapper's flex basis, so it must be overridden
+    # by data-testid (it isn't a class), without a ">" (st.markdown escapes it).
+    from webapp.view import CSS
+
+    assert '[data-testid="stLayoutWrapper"]:has(.st-key-chat_log)' in CSS
+    assert "flex: 0 1 auto !important" in CSS
+    assert ".st-key-chat_log { height: auto !important; max-height:" in CSS
+    assert ":has(> " not in CSS
+    # The column, not the panel, is sticky: the panel's own parent is only as tall as it is.
+    assert '[data-testid="stColumn"]:has(.st-key-chat_panel) { position: sticky;' in CSS

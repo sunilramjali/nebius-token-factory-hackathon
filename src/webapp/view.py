@@ -120,11 +120,15 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
 [data-testid="stColumn"]:has(.st-key-chat_panel) { position: sticky; top: 1rem;
   align-self: flex-start; }
 .st-key-chat_panel .section-title { margin-top: 3rem; }
-.st-key-chat_log { height: calc(100vh - 19rem) !important; min-height: 280px; }
+/* Grows with the conversation, then scrolls once it would fill the screen. */
+.st-key-chat_log { height: auto !important; max-height: max(280px, calc(100vh - 19rem)); }
+/* Streamlit fixes the box's wrapper at the container height; let it shrink to fit. */
+.st-key-chat_panel [data-testid="stLayoutWrapper"]:has(.st-key-chat_log) {
+  flex: 0 1 auto !important; height: auto !important; }
 
 @media (max-width: 720px) {
   [data-testid="stColumn"]:has(.st-key-chat_panel) { position: static; }
-  .st-key-chat_log { height: 60vh !important; }
+  .st-key-chat_log { max-height: 60vh; }
   .pitch { grid-template-columns: 1fr; }
   .tiles { grid-template-columns: repeat(2, 1fr); }
 }

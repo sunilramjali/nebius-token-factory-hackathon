@@ -9,7 +9,7 @@ dependencies = [
     "openai>=1.50",   # Nebius Token Factory is OpenAI-compatible
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
-    "streamlit>=1.40",
+    "streamlit>=1.67",
 ]
 
 [dependency-groups]
