@@ -48,3 +48,19 @@ def test_summary_counts_for_a_home_when_allowed():
     assert ev.expectation_met(item, reply(("get_property", {"home": "Flat B"})), TB)
     assert not ev.expectation_met(item, reply(("get_property", {"home": "Flat A"})), TB)
     assert not ev.expectation_met(ITEM, reply(("get_portfolio_summary", {})), TB)  # not allowed
+
+
+def test_budget_quality_needs_a_passing_and_best_plan():
+    item = {"id": "budget"}
+
+    def r(*results):
+        return SimpleNamespace(tool_calls=[{"name": "check_budget_plan", "result": x}
+                                           for x in results])  # fmt: skip
+
+    best = {"passed": True, "homes_reaching_c": 2, "best_possible_homes_reaching_c": 2}
+    weak = {"passed": True, "homes_reaching_c": 1, "best_possible_homes_reaching_c": 2}
+    failed = {"passed": False, "homes_reaching_c": 2, "best_possible_homes_reaching_c": 2}
+    assert ev.budget_quality(item, r(failed, best))
+    assert not ev.budget_quality(item, r(best, weak))  # the last passing plan counts
+    assert not ev.budget_quality(item, r(failed)) and not ev.budget_quality(item, None)
+    assert ev.budget_quality({"id": "priority"}, None)  # other questions unaffected

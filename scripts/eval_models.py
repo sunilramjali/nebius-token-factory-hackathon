@@ -63,9 +63,13 @@ QUESTIONS = [
     ("draft", "Write me a quote request for the insulation work on Flat B.", "draft tool"),
     ("plan", "Make a plan for all my homes and prepare the messages.", "whole-portfolio plan"),
     ("sort", "Sort out Flat A for me.", "one-home plan"),
+    ("budget", "I have £8,000 to spend this year. What should I do?", "agent decides, code checks"),
 ]  # fmt: skip
 # A question passes only if this tool was called (the answer must come from it).
-EXPECTED_TOOL = {"help": "find_help", "draft": "draft_quote_request", "plan": "make_plan"}
+EXPECTED_TOOL = {
+    "help": "find_help", "draft": "draft_quote_request", "plan": "make_plan",
+    "budget": "check_budget_plan",
+}  # fmt: skip
 # Questions that must call a tool for one named home: id -> (tool, home label).
 EXPECTED_HOME = {"sort": ("make_plan", "Flat A")}
 
@@ -119,7 +123,7 @@ SCENARIOS = [
             ("assistant", "Flat B would cost about £500 to reach C."),
         ],
         "question": "Remind me, how much would Flat B cost to reach C?",
-        "expect": ("get_property", "Flat B", None),
+        "expect": (("get_property", "get_portfolio_summary"), "Flat B", None),
         "forbid": ["£500"],
     },
 ]  # fmt: skip
@@ -135,6 +139,19 @@ def as_items(questions: list[tuple[str, str, str]]) -> list[dict]:
          if qid.split("#")[0] in EXPECTED_HOME else None}
         for qid, q, probe in questions
     ]  # fmt: skip
+
+
+def budget_quality(item: dict, reply) -> bool:
+    """For the budget question: the agent's plan passed the code check AND gets as many homes
+    to C as code says was possible. A decision-quality test, not just a wording one."""
+    if item["id"].split("#")[0] != "budget":
+        return True
+    checks = [c["result"] for c in (reply.tool_calls if reply else [])
+              if c["name"] == "check_budget_plan" and c["result"].get("passed")]  # fmt: skip
+    return (
+        bool(checks)
+        and checks[-1]["homes_reaching_c"] >= checks[-1]["best_possible_homes_reaching_c"]
+    )
 
 
 def expectation_met(item: dict, reply, toolbox: Toolbox) -> bool:
@@ -220,7 +237,7 @@ def run_model(
         used_tool = bool(reply and reply.tool_calls)
         grounded = bool(reply and reply.grounded)
         forbidden = [f for f in item["forbid"] if f in text]
-        expected = expectation_met(item, reply, toolbox)
+        expected = expectation_met(item, reply, toolbox) and budget_quality(item, reply)
         cost = bot.usage["prompt_tokens"] * prices[0] + bot.usage["completion_tokens"] * prices[1]
         answers.append(
             {

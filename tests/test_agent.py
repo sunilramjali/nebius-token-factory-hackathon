@@ -306,6 +306,15 @@ def test_no_tool_needed_keeps_the_second_answer():
     assert b.ask("Thanks!").text.startswith("You're welcome!")
 
 
+def test_long_sentence_gets_one_retry():
+    # Regression: Qwen kept writing 27-29 word sentences, over the style guide's 25.
+    long = " ".join(["word"] * 28) + "."
+    b = bot([LOOKUP, _msg(long), _msg("Flat A is a fix-early home. Get quotes first.")])
+    r = b.ask("Tell me about Flat A")
+    assert "25 words or fewer" in b.client.seen[-1][-1]["content"]
+    assert r.text.startswith("Flat A is a fix-early home.")
+
+
 def test_endless_tool_calls_fall_back():
     b = bot([_msg(calls=[("get_rules", "{}")])] * 10)
     r = b.ask("Rules?")

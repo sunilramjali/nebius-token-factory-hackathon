@@ -27,7 +27,8 @@ ODD = Policy(70, 12_345, date(2028, 1, 2), 7, compliance_deadline=date(2031, 3, 
 @pytest.mark.parametrize("key", sorted(TEXT))
 def test_ui_text_follows_style_guide(key):
     t = text(key, POLICY, n=10, home="Home 1", who="an accredited energy assessor",
-             address="Flat 2, 15 Example Road, E99 9ZZ")  # fmt: skip
+             address="Flat 2, 15 Example Road, E99 9ZZ", total="£800 to £1,200",
+             budget="£8,000", left="£4,000")  # fmt: skip
     for s in sentences(t):
         assert len(s.split()) <= MAX_WORDS, s
     for pat in BANNED + LEGAL_PATTERNS:

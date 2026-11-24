@@ -14,6 +14,7 @@ from typing import Any
 
 import duckdb
 
+from agent.budget import budget_options, check_budget_plan
 from agent.help import ASSESSOR, TRADES, draft_quote_request, find_help
 from agent.plan import make_plan
 from engine.policy import Policy
@@ -121,6 +122,48 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     }
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_budget_options",
+            "description": (
+                "For a budget question: what money could buy for each home that needs work "
+                "(cheapest route, safer route, boiler route, or just the first few measures), "
+                "each with engine cost and rating. Then choose and call check_budget_plan."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_budget_plan",
+            "description": (
+                "Check a plan against the landlord's budget: totals, cap, errors, and the best "
+                "number of homes that could reach C. Revise and check again until it passes. "
+                "Only present a plan that passed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "budget": {"type": "number", "description": "The budget in pounds."},
+                    "choices": {
+                        "type": "array",
+                        "description": "At most one option per home.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "home": {"type": "string"},
+                                "option": {"type": "string"},
+                            },
+                            "required": ["home", "option"],
+                        },
+                    },
+                },
+                "required": ["budget", "choices"],
             },
         },
     },
@@ -329,6 +372,13 @@ class Toolbox:
             return portfolio_summary(list(self.props.values()), self.policy)
         if name == "get_rules":
             return rules(self.policy)
+        if name == "get_budget_options":
+            return budget_options(list(self.props.values()), self.policy)
+        if name == "check_budget_plan":
+            by_label = {p.label: p for p in self.props.values()}
+            return check_budget_plan(
+                by_label, self.home, self.policy, args.get("budget"), args.get("choices")
+            )
         if name == "make_plan":
             key = str(args.get("home") or "").strip()
             if not key or key.lower() in {"all", "all homes", "everything"}:

@@ -148,7 +148,7 @@ def draft_quote_request(p: Property, policy: Policy, trade_key: str) -> dict:
         "Hello,",
         "",
         f"I'm a landlord looking for a quote for work on a rented {p.property_type or 'home'}.",
-        "Address: [add the address]",
+        "Property address: [add the address]",
         "",
     ]
     if trade is ASSESSOR:

@@ -27,7 +27,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from agent.assistant import Assistant
+from agent.budget import plan_for_choices
 from agent.help import draft_quote_request, fill_draft, find_help, mailto
+from agent.plan import make_plan
 from agent.tools import Toolbox, property_facts
 from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
@@ -130,6 +132,8 @@ def draft_box(d: dict, key: str) -> None:
     if known:
         address = known
         st.caption(t("form_address_known", address=known))
+    elif DEMO and p:  # demo addresses are hidden: say so, never a made-up address
+        address = t("demo_address", home=p.label)
     else:
         address = st.text_input(t("form_address"), key=f"{key}_address")
     body = fill_draft(d["body"], ss.get("me_name", ""), address, ss.get("me_phone", ""))
@@ -150,6 +154,42 @@ def plan_view(plan: dict, key: str) -> None:
             with st.expander(t("plan_message_to", who=n["who"])):
                 d = draft_quote_request(p, POLICY, n["trade"])
                 draft_box(d, f"{key}_{h['uprn']}_{n['trade']}")
+
+
+def budget_view(check: dict, key: str) -> None:
+    """A budget plan that passed the code check: what to do, the cost against the budget,
+    and one click to write the messages for those homes (built by code, no AI call)."""
+    st.dataframe(
+        [
+            {
+                t("budget_col_home"): o["home"],
+                t("budget_col_what"): o["label"],
+                t("budget_col_cost"): o["cost"],
+                t("budget_col_after"): o["rating_after"],
+                t("budget_col_c"): "Yes" if o["reaches_c"] else "Not yet",
+            }
+            for o in check["plan"]
+        ],
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        t(
+            "budget_total",
+            total=check["total_cost"],
+            budget=check["budget"],
+            left=check["left_over_mid"],
+        )  # fmt: skip
+    )
+    for w in check.get("warnings", []):
+        st.caption(w)
+    if st.button(t("budget_write"), key=f"{key}_write"):
+        homes = [ss.toolbox.home(o["uprn"]) for o in check["plan"]]
+        plan = plan_for_choices(make_plan([p for p in homes if p], POLICY), check["plan"],
+                                ss.toolbox.home)  # fmt: skip
+        call = {"name": "make_plan", "args": {"from": "budget plan"}, "result": plan}
+        ss.chat.append(("assistant", t("budget_written", n=plan["messages_ready"]), [call]))
+        st.rerun()
 
 
 def offer_draft(home_id: str, trade: str, who: str) -> None:
@@ -351,6 +391,11 @@ if toolbox and toolbox.props:
                         draft_box(c["result"], f"form_chat_{i}_{j}")
                     if c["name"] == "make_plan" and c["result"].get("homes"):
                         plan_view(c["result"], f"plan_{i}_{j}")
+                # Only the last plan that passed the code check is shown.
+                checks = [c for c in calls if c["name"] == "check_budget_plan"
+                          and c["result"].get("passed")]  # fmt: skip
+                if checks:
+                    budget_view(checks[-1]["result"], f"budget_{i}")
                 if calls:
                     with st.expander(t("working")):
                         for c in calls:

@@ -50,6 +50,11 @@ name or recommend a specific company.
 - For "make my plan", "sort out <home>" or "do it all for me", call make_plan (with the home \
 if one is named). Then say in 2 or 3 short sentences how many homes are planned, how many \
 messages are ready, and which home to start with. The app shows the plan below.
+- For a budget ("I have £8,000, what should I do?"): call get_budget_options, choose at most one \
+option per home to get as many homes to C as possible within the budget (fix-early homes \
+first), then call check_budget_plan. If it doesn't pass, or best_possible_homes_reaching_c is \
+higher than yours, revise and check again. Only present a plan that passed. Say which homes \
+you chose and why, in plain words. If no budget is given, ask for it in one short question.
 - Only when the landlord asks for a quote request or message, call draft_quote_request. \
 The app shows the full message \
 below your reply: say it's below in one sentence. Don't rewrite it.
@@ -176,6 +181,34 @@ def unbacked_claims(text: str, calls: list[dict[str, Any]]) -> list[str]:
     )
     pats = SEND_CLAIMS + ([] if drafted else DRAFT_CLAIMS)
     return sorted({m.group(0) for p in pats for m in re.finditer(p, text)})
+
+
+BUDGET_UNCHECKED = (
+    "This budget plan hasn't passed the cost check yet. Ask again, or check the table above."
+)
+
+
+def budget_unchecked(calls: list[dict[str, Any]]) -> bool:
+    """The agent looked at budget options but presented no plan that passed the code check."""
+    looked = any(c["name"] == "get_budget_options" for c in calls)
+    passed = any(
+        c["name"] == "check_budget_plan" and (c.get("result") or {}).get("passed") for c in calls
+    )
+    return looked and not passed
+
+
+MAX_WORDS = 25  # docs/report_style.md: sentences of 25 words or fewer
+
+
+def long_sentences(text: str) -> list[str]:
+    """Sentences over MAX_WORDS in the model's own text (lists and markdown stripped)."""
+    body = re.sub(r"[*_`#>|]", " ", text)
+    out = []
+    for block in body.split("\n"):
+        for sent in re.split(r"(?<=[.!?])\s+", block.strip()):
+            if len(sent.split()) > MAX_WORDS:
+                out.append(sent)
+    return out
 
 
 def tool_talk(text: str) -> list[str]:
@@ -311,7 +344,8 @@ class Assistant:
 
         bad, legal = ungrounded_amounts(text, results()), legal_conclusions(text)
         talk, claims = tool_talk(text), unbacked_claims(text, calls)
-        if bad or legal or talk or claims:  # one retry covers every problem
+        unchecked, wordy = budget_unchecked(calls), long_sentences(text)
+        if bad or legal or talk or claims or unchecked or wordy:  # one retry covers all
             fixes = []
             if bad:
                 fixes.append(f"These amounts aren't in the tool results: {', '.join(bad)}.")
@@ -323,6 +357,16 @@ class Assistant:
             if talk:
                 fixes.append(
                     f"Don't mention {', '.join(talk)}. Say the facts directly to the landlord."
+                )
+            if wordy:
+                fixes.append(
+                    f"Keep every sentence to {MAX_WORDS} words or fewer. Split this one: "
+                    f"“{wordy[0][:120]}”."
+                )
+            if unchecked:
+                fixes.append(
+                    "Your budget plan hasn't passed check_budget_plan. Check it, revise until "
+                    "it passes, and only then present it."
                 )
             if claims:
                 fixes.append(
@@ -336,6 +380,7 @@ class Assistant:
                 text = retry
                 bad, legal = ungrounded_amounts(text, results()), legal_conclusions(text)
                 claims = unbacked_claims(text, calls)
+                unchecked = budget_unchecked(calls)
         if claims:  # still there after the retry: those sentences go
             text = drop_sentences(text, SEND_CLAIMS + DRAFT_CLAIMS) or FALLBACK
         if tool_talk(text):  # still there after the retry: cut the lead-ins, keep the facts
@@ -343,6 +388,8 @@ class Assistant:
         if legal:  # still there after the retry: the landlord never sees those sentences
             text = drop_sentences(text, LEGAL_PATTERNS) or FALLBACK
         text = lead_break(text)
+        if unchecked:  # still no passing check after the retry: say so plainly
+            text = f"{text}\n\n{BUDGET_UNCHECKED}"
         grounded = not bad
         if not grounded:
             text = f"{text}\n\n{UNCHECKED_NOTE}"
