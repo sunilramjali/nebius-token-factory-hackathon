@@ -27,6 +27,15 @@ uv run pytest
 uv run --env-file .env streamlit run app.py                # the demo
 ```
 
+## Hosted demo (Streamlit Community Cloud)
+
+The public app runs in **demo mode**: it's on whenever `data/epc.duckdb` is missing, so a hosted
+copy can never reach register data. It shows 6 example homes from
+`examples/demo_portfolio.json` (UPRNs and EPC fields only, no addresses; regenerate with
+`uv run python scripts/export_demo.py`), has no address entry, and caps chat at 10 questions
+per visitor and 300 a day. Set `NEBIUS_API_KEY` and `NEBIUS_MODEL` in the app's Secrets.
+Preview it locally with `DEMO_MODE=1`.
+
 Model choice: `scripts/eval_models.py` scores Nebius models on landlord questions (grounding,
 wording, legal traps) with real token costs. Current pick: `Qwen/Qwen3-235B-A22B-Instruct-2507`
 (17/18 over 3 runs, about 2s and $0.70 per 1,000 questions). Rehearse demo questions with

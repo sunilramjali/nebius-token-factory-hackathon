@@ -1,27 +1,41 @@
 """Streamlit demo: landlord enters homes -> table -> chat with the assistant.
 
-    uv run --env-file .env streamlit run app.py
+    uv run --env-file .env streamlit run app.py              # full app, local snapshot
+    DEMO_MODE=1 uv run --env-file .env streamlit run app.py  # what the hosted demo shows
 
-Numbers come from the engine (local snapshot, data/epc.duckdb); the assistant only explains
-them. Register addresses are shown only to settle an ambiguous match and never reach Nebius.
+Numbers come from the engine; the assistant only explains them. Register addresses are shown
+only to settle an ambiguous match and never reach Nebius.
+
+Demo mode (the public Streamlit Cloud app): on whenever the local snapshot is missing, so a
+hosted copy can never reach register data. It serves the 6 homes in
+examples/demo_portfolio.json (no addresses), has no address entry, and caps chat questions.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))  # hosts that don't install it
 
 import duckdb
 import streamlit as st
 from dotenv import load_dotenv
 
 from agent.assistant import Assistant
-from agent.tools import property_facts
+from agent.tools import Toolbox, property_facts
 from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
 from webapp.logic import (
+    DEMO_QUESTIONS_PER_DAY,
+    DEMO_QUESTIONS_PER_VISITOR,
+    MAX_QUESTION_CHARS,
+    DailyCounter,
     build_toolbox,
     demo_entries,
+    load_demo,
     needs_input_message,
     resolve_rows,
     rows_from_entries,
@@ -33,11 +47,31 @@ load_dotenv()
 st.set_page_config(page_title="Route to EPC C", layout="wide")
 POLICY = load_policy()
 EMPTY_ROWS = [{"label": "", "address": "", "postcode": "", "uprn": ""} for _ in range(3)]
+DB_PATH = os.environ.get("DUCKDB_TARGET", "data/epc.duckdb")
+DEMO = os.environ.get("DEMO_MODE") == "1" or not Path(DB_PATH).is_file()
+
+
+def secret(name: str) -> str | None:
+    """Env var, else a Streamlit Cloud secret (never stored in the repo)."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        value = st.secrets.get(name)
+    except Exception:  # no secrets file locally
+        return None
+    if value:
+        os.environ[name] = str(value)  # the assistant reads the environment
+    return value
+
+
+@st.cache_resource
+def daily_counter() -> DailyCounter:
+    return DailyCounter(DEMO_QUESTIONS_PER_DAY)  # shared by every visitor of this server
 
 
 @st.cache_resource
 def connection() -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(os.environ.get("DUCKDB_TARGET", "data/epc.duckdb"), read_only=True)
+    return duckdb.connect(DB_PATH, read_only=True)
 
 
 def con() -> duckdb.DuckDBPyConnection:
@@ -67,35 +101,44 @@ ss.setdefault("editor_key", 0)
 
 st.title(text("title", POLICY))
 st.caption(f"⚠️ {DISCLAIMER}")
-st.write(text("intro", POLICY))
 
-# --- 1. Enter homes ------------------------------------------------------------------------
-st.caption(text("entry_help", POLICY))
-edited = st.data_editor(
-    ss.entries,
-    num_rows="dynamic",
-    width="stretch",
-    key=f"editor_{ss.editor_key}",
-    column_config={
-        "label": st.column_config.TextColumn("Label (optional)"),
-        "address": st.column_config.TextColumn("Address", width="large"),
-        "postcode": st.column_config.TextColumn("Postcode"),
-        "uprn": st.column_config.TextColumn("UPRN (optional)"),
-    },
-)
-c1, c2, _ = st.columns([1, 1, 4])
-if c1.button(text("check", POLICY), type="primary"):
-    ss.entries = edited
-    check(edited)
-if c2.button(text("demo", POLICY)):
-    ss.entries = demo_entries(con())
-    ss.editor_key += 1  # a new key makes the editor show the new rows
-    check(ss.entries)
-    st.rerun()
+if DEMO:
+    st.info(text("demo_banner", POLICY))
+    for key in ("user", "problem", "solution"):
+        st.markdown(text(key, POLICY))
+    if "toolbox" not in ss:
+        ss.toolbox = Toolbox(load_demo(), POLICY)
+        ss.chat = []
+else:
+    st.write(text("intro", POLICY))
 
-# --- 2. Rows that need input -----------------------------------------------------------------
-resolved = ss.get("resolved", [])
-toolbox = ss.get("toolbox")
+# --- 1. Enter homes (full app only) -----------------------------------------------------------
+if not DEMO:
+    st.caption(text("entry_help", POLICY))
+    edited = st.data_editor(
+        ss.entries,
+        num_rows="dynamic",
+        width="stretch",
+        key=f"editor_{ss.editor_key}",
+        column_config={
+            "label": st.column_config.TextColumn("Label (optional)"),
+            "address": st.column_config.TextColumn("Address", width="large"),
+            "postcode": st.column_config.TextColumn("Postcode"),
+            "uprn": st.column_config.TextColumn("UPRN (optional)"),
+        },
+    )
+    c1, c2, _ = st.columns([1, 1, 4])
+    if c1.button(text("check", POLICY), type="primary"):
+        ss.entries = edited
+        check(edited)
+    if c2.button(text("demo", POLICY)):
+        ss.entries = demo_entries(con())
+        ss.editor_key += 1  # a new key makes the editor show the new rows
+        check(ss.entries)
+        st.rerun()
+
+# --- 2. Rows that need input (full app only) -------------------------------------------------
+resolved = [] if DEMO else ss.get("resolved", [])
 problems = [r for r in resolved if r.status not in ("matched", "given")]
 if problems:
     st.subheader(text("needs_input", POLICY))
@@ -122,6 +165,7 @@ if problems:
                 st.rerun()
 
 # --- 3. Results ------------------------------------------------------------------------------
+toolbox = ss.get("toolbox")
 if toolbox and toolbox.props:
     st.subheader(text("results", POLICY))
     st.dataframe(table_rows(toolbox), width="stretch", hide_index=True)
@@ -159,7 +203,7 @@ if toolbox and toolbox.props:
 
     # --- 4. Chat -----------------------------------------------------------------------------
     st.subheader(text("chat", POLICY))
-    if not (os.environ.get("NEBIUS_API_KEY") and os.environ.get("NEBIUS_MODEL")):
+    if not (secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL")):
         st.info(text("chat_off", POLICY))
     else:
         if "bot" not in ss:
@@ -171,15 +215,23 @@ if toolbox and toolbox.props:
                     with st.expander(text("working", POLICY)):
                         for c in calls:
                             st.code(f"{c['name']}({c['args'] or ''})", language=None)
-        if q := st.chat_input(text("chat_placeholder", POLICY)):
-            ss.chat.append(("user", q, []))
-            with st.spinner("…"):
-                try:
-                    reply = ss.bot.ask(q)
-                    ss.chat.append(("assistant", reply.text, reply.tool_calls))
-                except Exception:  # network, rate limit: the table still works
-                    ss.chat.append(("assistant", text("chat_error", POLICY), []))
-            st.rerun()
+        asked = sum(role == "user" for role, _, _ in ss.get("chat", []))
+        if DEMO and asked >= DEMO_QUESTIONS_PER_VISITOR:
+            st.info(text("chat_limit", POLICY, n=DEMO_QUESTIONS_PER_VISITOR))
+        elif q := st.chat_input(text("chat_placeholder", POLICY), max_chars=MAX_QUESTION_CHARS):
+            if len(q) > MAX_QUESTION_CHARS:
+                st.warning(text("too_long", POLICY, n=MAX_QUESTION_CHARS))
+            elif DEMO and not daily_counter().take():
+                st.warning(text("chat_daily", POLICY))
+            else:
+                ss.chat.append(("user", q, []))
+                with st.spinner("…"):
+                    try:
+                        reply = ss.bot.ask(q)
+                        ss.chat.append(("assistant", reply.text, reply.tool_calls))
+                    except Exception:  # network, rate limit: the table still works
+                        ss.chat.append(("assistant", text("chat_error", POLICY), []))
+                st.rerun()
 
 st.divider()
 st.caption(LICENCE)

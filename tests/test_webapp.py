@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date
 
@@ -8,14 +9,24 @@ from test_report_wording import BANNED, MAX_WORDS, sentences
 from agent.assistant import LEGAL_PATTERNS
 from agent.tools import Toolbox
 from engine.policy import Policy
-from webapp.logic import TEXT, needs_input_message, rows_from_entries, table_rows, text
+from webapp.logic import (
+    DEMO_FILE,
+    TEXT,
+    DailyCounter,
+    dump_demo,
+    load_demo,
+    needs_input_message,
+    rows_from_entries,
+    table_rows,
+    text,
+)
 
 ODD = Policy(70, 12_345, date(2028, 1, 2), 7, compliance_deadline=date(2031, 3, 4))
 
 
 @pytest.mark.parametrize("key", sorted(TEXT))
 def test_ui_text_follows_style_guide(key):
-    t = text(key, POLICY)
+    t = text(key, POLICY, n=10)
     for s in sentences(t):
         assert len(s.split()) <= MAX_WORDS, s
     for pat in BANNED + LEGAL_PATTERNS:
@@ -24,6 +35,7 @@ def test_ui_text_follows_style_guide(key):
 
 def test_ui_text_takes_policy_values_from_config():
     assert "£12,345" in text("intro", ODD) and "2 January 2028" in text("fix_early_note", ODD)
+    assert "4 March 2031" in text("problem", ODD) and "£12,345" in text("problem", ODD)
     for key, t in TEXT.items():
         assert "10,000" not in t and "2029" not in t and "2030" not in t, key
 
@@ -59,3 +71,35 @@ def test_table_rows_match_assistant_facts():
     assert rows["House C"]["Cheapest route to C"] == "—"
     assert rows["House C"]["Likely within cap"] == "—"
     assert rows["House D"]["Status"] == "Already C" and rows["House D"]["Rating gain to C"] == "—"
+
+
+# --- hosted demo -----------------------------------------------------------------------------
+
+
+def test_demo_round_trip_drops_register_address(tmp_path):
+    p = prop()  # has register_address="1 SECRET ROAD, E13 0AA"
+    path = tmp_path / "demo.json"
+    path.write_text(json.dumps(dump_demo([p])))
+    assert "SECRET" not in path.read_text()
+    (back,) = load_demo(path)
+    assert back.register_address is None
+    assert (back.label, back.registration_date, back.steps[0].summary) == (
+        p.label, p.registration_date, p.steps[0].summary
+    )  # fmt: skip
+
+
+def test_committed_demo_file_has_no_addresses():
+    # Served publicly by the hosted demo: UPRNs and EPC fields only (docs/data_access.md §3).
+    raw = DEMO_FILE.read_text()
+    assert not re.search(r"\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b", raw, re.I), "postcode-like"
+    assert "register_address" not in raw and "address_line" not in raw
+    homes = load_demo()
+    assert [p.label for p in homes] == [f"Home {i}" for i in range(1, 7)]
+    assert len({table_rows(Toolbox(homes, POLICY))[i]["Status"] for i in range(6)}) == 6
+
+
+def test_daily_counter_caps_and_resets():
+    c = DailyCounter(2)
+    day = date(2026, 11, 24)
+    assert [c.take(day), c.take(day), c.take(day)] == [True, True, False]
+    assert c.take(date(2026, 11, 25)) is True  # new day, new allowance

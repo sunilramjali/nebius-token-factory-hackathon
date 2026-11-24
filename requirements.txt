@@ -1,0 +1,6 @@
+# For Streamlit Community Cloud. Same packages as pyproject.toml; keep the two in step.
+duckdb==1.5.6
+openai>=1.50
+python-dotenv>=1.2.4
+pyyaml>=6.0.3
+streamlit>=1.40

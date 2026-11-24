@@ -7,7 +7,12 @@ typed (to settle an ambiguous match) and never reach the assistant. A home with 
 
 from __future__ import annotations
 
+import json
 import re
+import threading
+from dataclasses import asdict, fields
+from datetime import date
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -21,7 +26,7 @@ from lookup.portfolio import (
     load_candidates,
     resolve,
 )
-from report.portfolio_report import NEEDS_INPUT_MESSAGES
+from report.portfolio_report import NEEDS_INPUT_MESSAGES, Property, Step
 
 # Landlord-facing text (docs/report_style.md). {cap} and {deadline} come from the policy.
 TEXT = {
@@ -44,7 +49,32 @@ TEXT = {
     "chat_error": "The assistant isn't available right now. The table above still works.",
     "working": "How this answer was built",
     "no_homes": "Add at least one home with a postcode.",
+    # Hosted demo (DEMO_MODE): the pitch, then 6 example homes. No address entry.
+    "demo_banner": (
+        "Demo: 6 real rented homes in Newham, from the public EPC register. Addresses are "
+        "hidden. Run it locally to check your own homes."
+    ),
+    "user": "**Who it's for:** a landlord with a few rented homes in Newham and no energy adviser.",
+    "problem": (
+        "**The problem:** under the government's proposals, rented homes would need EPC C by "
+        "{compliance}. Spend would be capped at {cap} per home. Which homes need work, and "
+        "what's the cheapest fix?"
+    ),
+    "solution": (
+        "**The solution:** our engine works out each home's cheapest route to C from the EPC "
+        "register. An AI agent on Nebius Token Factory explains it, using only the engine's "
+        "figures."
+    ),
+    "chat_limit": "You've used the {n} demo questions. Run the app locally to ask more.",
+    "chat_daily": "The demo has reached today's question limit. Please try again tomorrow.",
+    "too_long": "Please keep questions under {n} characters.",
 }
+
+# Hosted demo limits, so a public link can't run up the Nebius bill (about $0.0007 a question).
+DEMO_QUESTIONS_PER_VISITOR = 10
+DEMO_QUESTIONS_PER_DAY = 300
+MAX_QUESTION_CHARS = 500
+DEMO_FILE = Path(__file__).resolve().parents[2] / "examples" / "demo_portfolio.json"
 
 # One home per situation, high-confidence private rentals, picked deterministically. Used for
 # the demo button and by scripts/eval_models.py. Identified by UPRN only: no addresses.
@@ -73,10 +103,65 @@ SELECT label, uprn FROM (
 """
 
 
-def text(key: str, policy: Policy) -> str:
+def text(key: str, policy: Policy, **extra: Any) -> str:
     return TEXT[key].format(
-        cap=f"£{policy.cost_cap_gbp:,}", deadline=f"{policy.lock_in_deadline:%-d %B %Y}"
+        cap=f"£{policy.cost_cap_gbp:,}",
+        deadline=f"{policy.lock_in_deadline:%-d %B %Y}",
+        compliance=f"{policy.compliance_deadline:%-d %B %Y}",
+        **extra,
     )
+
+
+# --- hosted demo -------------------------------------------------------------------------
+
+# Never exported: the register address is licence-restricted (docs/data_access.md §3).
+_NOT_EXPORTED = {"register_address"}
+_STEP_LISTS = ("steps", "alternative", "safer")
+
+
+def dump_demo(props: list[Property]) -> dict[str, Any]:
+    homes = []
+    for p in props:
+        d = {k: v for k, v in asdict(p).items() if k not in _NOT_EXPORTED}
+        d["registration_date"] = p.registration_date.isoformat()
+        homes.append(d)
+    return {
+        "note": "Engine results for 6 example homes. UPRNs and EPC fields only, no addresses "
+        "(Open Government Licence v3.0). Made by scripts/export_demo.py.",
+        "homes": homes,
+    }
+
+
+def load_demo(path: Path = DEMO_FILE) -> list[Property]:
+    names = {f.name for f in fields(Property)}
+    props = []
+    for d in json.loads(Path(path).read_text())["homes"]:
+        d = {k: v for k, v in d.items() if k in names and k not in _NOT_EXPORTED}
+        d["registration_date"] = date.fromisoformat(d["registration_date"])
+        for key in _STEP_LISTS:
+            d[key] = [Step(**s) for s in d.get(key, [])]
+        props.append(Property(**d))
+    return props
+
+
+class DailyCounter:
+    """Questions asked today, across all visitors of one server process."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self._day, self._count = date.today(), 0
+        self._lock = threading.Lock()
+
+    def take(self, today: date | None = None) -> bool:
+        """Count one question. False if today's limit is already reached."""
+        today = today or date.today()
+        with self._lock:
+            if today != self._day:
+                self._day, self._count = today, 0
+            if self._count >= self.limit:
+                return False
+            self._count += 1
+            return True
 
 
 def demo_entries(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
