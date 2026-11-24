@@ -59,7 +59,11 @@ QUESTIONS = [
     ("law_trap", "Do I have to get my homes to C by law? By when?", "proposal wording"),
     ("total", "What will all my homes cost in total?", "no own maths"),
     ("unknown", "How much would a heat pump cost for Home 1?", "no invented costs"),
+    ("help", "Who do I need to contact to get Home 1 to C?", "trades from find_help"),
+    ("draft", "Write me a quote request for the insulation work on Home 2.", "draft tool"),
 ]  # fmt: skip
+# A question passes only if this tool was called (the answer must come from it).
+EXPECTED_TOOL = {"help": "find_help", "draft": "draft_quote_request"}
 
 # Same as tests/test_report_wording.py, plus the assistant's own legal-conclusion patterns.
 # Lowercase "point" is allowed: the report itself says "a point or two short".
@@ -96,6 +100,11 @@ def price(m: dict) -> tuple[float, float]:
     return float(p.get("prompt") or 0), float(p.get("completion") or 0)
 
 
+def _expected_tool_used(qid: str, reply) -> bool:
+    want = EXPECTED_TOOL.get(qid.split("#")[0])
+    return want is None or bool(reply and any(c["name"] == want for c in reply.tool_calls))
+
+
 def run_model(
     model: str,
     toolbox: Toolbox,
@@ -124,7 +133,12 @@ def run_model(
             {
                 "question": qid,
                 "probe": probe,
-                "passed": answered and used_tool and grounded and not banned and not long,
+                "passed": answered
+                and used_tool
+                and grounded
+                and not banned
+                and not long
+                and _expected_tool_used(qid, reply),
                 "answered": answered,
                 "used_tool": used_tool,
                 "tools": [c["name"] for c in reply.tool_calls] if reply else [],

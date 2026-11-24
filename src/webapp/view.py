@@ -94,6 +94,10 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
 .home .cost { color: var(--ink); font-weight: 600; }
 .home .next { margin-top: 10px; font-size: 0.97rem; color: var(--ink); }
 
+.help { padding-left: 1.2rem; margin: 0.3rem 0 0.8rem; color: var(--ink); font-size: 0.95rem; }
+.help li { margin-bottom: 0.45rem; line-height: 1.4; }
+.help a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.help a:hover { text-decoration: underline; }
 .small-print { font-size: 0.78rem; color: var(--ink-3); line-height: 1.45; margin-top: 3rem; }
 
 .stButton button { border-radius: 980px; padding: 0.45rem 1.1rem; border: 1px solid var(--hairline);
@@ -188,6 +192,19 @@ def home_card(p: Property, toolbox: Toolbox) -> str:
         f"<span class='cost'>{escape(cost)}</span></div>"
         f"<div class='next'>{escape(next_actions([p], policy)[0])}</div></div>"
     )
+
+
+def help_list(needed: list[dict]) -> str:
+    """Who to contact, in work order. Links are fixed official registers (agent/help.py)."""
+    rows = []
+    for n in needed:
+        work = f" for {', '.join(n['for']).lower()}" if n["for"] else ""
+        rows.append(
+            f"<li><b>{escape(n['who'].capitalize())}</b>{escape(work)}. {escape(n['check'])} "
+            f"<a href='{escape(n['link'], quote=True)}' target='_blank' rel='noopener'>"
+            f"{escape(n['find_at'])}</a></li>"
+        )
+    return f"<ol class='help'>{''.join(rows)}</ol>"
 
 
 def small_print(*lines: str) -> str:

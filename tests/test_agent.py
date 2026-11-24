@@ -204,6 +204,30 @@ def test_legal_patterns():
     assert drop_sentences(text, LEGAL_PATTERNS) == "Get quotes."
 
 
+def test_tool_talk_gets_one_retry():
+    # Regression: Qwen kept writing "The tool states: ..." to landlords.
+    b = bot([_msg("The tool states: get quotes."), _msg("Get quotes for Flat A.")])
+    r = b.ask("What next?")
+    assert r.text.startswith("Get quotes for Flat A.")
+    assert "Don't mention the tool" in b.client.seen[-1][-1]["content"]
+
+
+def test_tool_talk_kept_if_retry_repeats_it():
+    b = bot([_msg("The data says get quotes."), _msg("The data says get quotes.")])
+    assert b.ask("?").text.startswith("The data says get quotes.")  # cosmetic: not dropped
+
+
+def test_draft_tool_blocked_unless_landlord_asks():
+    # Regression: Qwen drafted a quote request for "How much would a heat pump cost?".
+    call = ("draft_quote_request", '{"home": "Flat A", "trade": "insulation"}')
+    b = bot([_msg(calls=[call]), _msg("Heat pumps aren't on Flat A's route.")])
+    r = b.ask("How much would a heat pump cost for Flat A?")
+    assert r.tool_calls[0]["result"]["error"].startswith("The landlord didn't ask")
+    b = bot([_msg(calls=[call]), _msg("Your quote request is below.")])
+    r = b.ask("Write me a quote request for Flat A")
+    assert "body" in r.tool_calls[0]["result"]
+
+
 def test_endless_tool_calls_fall_back():
     b = bot([_msg(calls=[("get_rules", "{}")])] * 10)
     r = b.ask("Rules?")

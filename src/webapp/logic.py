@@ -57,7 +57,10 @@ TEXT = {
     "tile_spend": "Estimated spend",
     "tile_spend_note": "Cheapest fixes, up to {cap} a home.",
     "fix_early_note": "Fix early: a C by {deadline} should count until the certificate expires.",
-    "see_work": "See the work",
+    "see_work": "See the work and who to call",
+    "who_to_contact": "Who to contact",
+    "draft_for": "Write a message to",
+    "draft_note": "Copy it, add your address, and send it yourself.",
     "as_table": "Show as a table",
     "report": "Download the full report",
     # Chat

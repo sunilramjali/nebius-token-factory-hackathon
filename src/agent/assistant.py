@@ -41,6 +41,11 @@ Facts:
 or invent a cost, rating or date. If a tool doesn't give it, say you don't know.
 - Call get_portfolio_summary before answering about the landlord's homes. Call get_property \
 for detail on one home. Call get_rules for deadlines and the cost cap.
+- For "who do I contact?" call find_help. Name the trades and where to find them. Never \
+name or recommend a specific company.
+- Only when the landlord asks for a quote request or message, call draft_quote_request. \
+The app shows the full message \
+below your reply: say it's below in one sentence. Don't rewrite it.
 - Refer to homes by their label, not by UPRN.
 - Never mention tools, "the tool" or "the data" to the landlord. Say the facts directly.
 - When a tool says what a figure covers, use that description. Don't describe it yourself.
@@ -104,6 +109,27 @@ LEGAL_PATTERNS = [
 ]
 
 
+# Talking about the machinery ("The tool states: ...") reads oddly to a landlord. The prompt
+# asks for plain facts, but Qwen kept doing it, so it also gets one retry. Cosmetic: never
+# dropped.
+TOOL_TALK = re.compile(r"(?i)\b(the|my) (tools?|data)\b")
+
+
+# The draft tool only runs when the landlord asks for a message: Qwen drafted unasked-for
+# quote requests (e.g. for "How much would a heat pump cost?").
+DRAFT_REQUEST = re.compile(
+    r"(?i)\b(quotes?|message|email|e-mail|letter|draft|write|contact them)\b"
+)
+
+
+def wants_draft(question: str) -> bool:
+    return bool(DRAFT_REQUEST.search(question or ""))
+
+
+def tool_talk(text: str) -> list[str]:
+    return sorted({m.group(0).lower() for m in TOOL_TALK.finditer(text)})
+
+
 def legal_conclusions(text: str) -> list[str]:
     return sorted({m.group(0) for pat in LEGAL_PATTERNS for m in re.finditer(pat, text)})
 
@@ -141,6 +167,7 @@ class Assistant:
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         # Running totals across the chat, for cost tracking (scripts/eval_models.py).
         self.usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        self._question = ""  # the landlord's current question (gates the draft tool)
 
     def _complete(self) -> Any:
         resp = self.client.chat.completions.create(
@@ -185,7 +212,14 @@ class Assistant:
             for tc in msg.tool_calls:
                 try:
                     args = json.loads(tc.function.arguments or "{}")
-                    result = self.toolbox.call(tc.function.name, args)
+                    if tc.function.name == "draft_quote_request" and not wants_draft(
+                        self._question
+                    ):
+                        result = {
+                            "error": "The landlord didn't ask for a message. Don't draft one."
+                        }
+                    else:
+                        result = self.toolbox.call(tc.function.name, args)
                 except (json.JSONDecodeError, TypeError, AttributeError):
                     args, result = {}, {"error": "arguments must be a JSON object"}
                 calls.append({"name": tc.function.name, "args": args, "result": result})
@@ -199,6 +233,7 @@ class Assistant:
         return None
 
     def ask(self, question: str) -> Reply:
+        self._question = question
         self.messages.append({"role": "user", "content": question})
         calls: list[dict[str, Any]] = []
         text = self._run(calls)
@@ -209,7 +244,8 @@ class Assistant:
             return [m["content"] for m in self.messages if m["role"] == "tool"]
 
         bad, legal = ungrounded_amounts(text, results()), legal_conclusions(text)
-        if bad or legal:  # one retry covers both problems
+        talk = tool_talk(text)
+        if bad or legal or talk:  # one retry covers every problem
             fixes = []
             if bad:
                 fixes.append(f"These amounts aren't in the tool results: {', '.join(bad)}.")
@@ -217,6 +253,10 @@ class Assistant:
                 fixes.append(
                     f"These read as legal conclusions: {', '.join(legal)}. Give the home's "
                     "status and the tool's wording instead."
+                )
+            if talk:
+                fixes.append(
+                    f"Don't mention {', '.join(talk)}. Say the facts directly to the landlord."
                 )
             self.messages.append({"role": "user", "content": " ".join(fixes) + " Answer again."})
             retry = self._run(calls)

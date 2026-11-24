@@ -27,6 +27,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from agent.assistant import Assistant
+from agent.help import draft_quote_request, find_help
 from agent.tools import Toolbox, property_facts
 from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
@@ -220,7 +221,8 @@ if toolbox and toolbox.props:
         f = property_facts(p, POLICY)
         route = f.get("cheapest_route")
         extras = [line for line in [*f.get("caveats", []), f.get("exemption")] if line]
-        if (route and route["measures"]) or extras:
+        help_ = find_help(p, POLICY)["needed"]
+        if (route and route["measures"]) or extras or help_:
             with st.expander(t("see_work")):
                 if route and route["measures"]:
                     st.dataframe(
@@ -237,6 +239,20 @@ if toolbox and toolbox.props:
                     )
                 for line in extras:
                     st.caption(line)
+                if help_:
+                    # "Who to contact": official registers only, and a draft to copy.
+                    st.markdown(f"**{t('who_to_contact')}**")
+                    html(view.help_list(help_))
+                    choice = st.selectbox(
+                        t("draft_for"),
+                        [None, *help_],
+                        format_func=lambda h: "—" if h is None else h["who"].capitalize(),
+                        key=f"draft_{p.property_id}",
+                    )
+                    if choice is not None:
+                        d = draft_quote_request(p, POLICY, choice["trade"])
+                        st.caption(t("draft_note"))
+                        st.code(f"Subject: {d['subject']}\n\n{d['body']}", language=None)
 
     st.caption(t("fix_early_note"))
     with st.expander(t("as_table")):  # the accessible table view of the cards above
@@ -260,6 +276,10 @@ if toolbox and toolbox.props:
         for role, content, calls in ss.get("chat", []):
             with st.chat_message(role):
                 st.markdown(content)
+                for c in calls:  # drafts come straight from the tool, not the model
+                    if c["name"] == "draft_quote_request" and "body" in c["result"]:
+                        d = c["result"]
+                        st.code(f"Subject: {d['subject']}\n\n{d['body']}", language=None)
                 if calls:
                     with st.expander(t("working")):
                         for c in calls:

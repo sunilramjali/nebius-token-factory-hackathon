@@ -14,6 +14,7 @@ from typing import Any
 
 import duckdb
 
+from agent.help import ASSESSOR, TRADES, draft_quote_request, find_help
 from engine.policy import Policy
 from report.portfolio_report import (
     CONFIDENCE_TEXT,
@@ -61,6 +62,42 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     }
                 },
                 "required": ["home"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_help",
+            "description": (
+                "Who the landlord should contact for one home (assessor, installers, "
+                "engineers), in work order, with the official register to find them."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "home": {"type": "string", "description": "The home's label or UPRN."}
+                },
+                "required": ["home"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_quote_request",
+            "description": (
+                "Write a quote request the landlord can copy and send to one trade for one "
+                "home. Use a trade from find_help. The app shows the full message to the "
+                "landlord, so don't repeat it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "home": {"type": "string", "description": "The home's label or UPRN."},
+                    "trade": {"type": "string", "enum": [*TRADES, ASSESSOR.key]},
+                },
+                "required": ["home", "trade"],
             },
         },
     },
@@ -253,7 +290,7 @@ class Toolbox:
             return portfolio_summary(list(self.props.values()), self.policy)
         if name == "get_rules":
             return rules(self.policy)
-        if name == "get_property":
+        if name in ("get_property", "find_help", "draft_quote_request"):
             # Models pass the label as often as the UPRN; accept either ("uprn" for old calls).
             key = str(args.get("home") or args.get("uprn") or "").strip()
             p = self.props.get(key) or next(
@@ -264,5 +301,9 @@ class Toolbox:
                     "error": f"{key!r} isn't in this portfolio.",
                     "homes": [p.label for p in self.props.values()],
                 }
+            if name == "find_help":
+                return find_help(p, self.policy)
+            if name == "draft_quote_request":
+                return draft_quote_request(p, self.policy, str(args.get("trade", "")))
             return property_facts(p, self.policy)
         return {"error": f"unknown tool {name!r}"}
