@@ -58,7 +58,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "properties": {
                     "home": {
                         "type": "string",
-                        "description": "The home's label (e.g. 'Home 2') or its UPRN.",
+                        "description": "The home's label (e.g. 'Flat A') or its UPRN.",
                     }
                 },
                 "required": ["home"],
@@ -266,6 +266,13 @@ def rules(policy: Policy) -> dict[str, Any]:
     }
 
 
+def _name_key(label: str) -> str:
+    """Compare labels without case, punctuation, a leading "the" or a trailing "'s"."""
+    s = re.sub(r"['’]s\b", "", label.casefold())
+    s = re.sub(r"^the\s+", "", s.strip())
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
 class Toolbox:
     """Runs tool calls against one landlord's portfolio."""
 
@@ -285,6 +292,15 @@ class Toolbox:
         )
         return cls(props, policy, missing)
 
+    def home(self, key: str) -> Property | None:
+        """A home by UPRN or by the landlord's label, forgivingly: "flat-a", "Flat A's" and
+        "the flat a" all find "Flat A" (an idea from Fresha's loose name matching)."""
+        key = str(key or "").strip()
+        if key in self.props:
+            return self.props[key]
+        want = _name_key(key)
+        return next((p for p in self.props.values() if _name_key(p.label) == want), None)
+
     def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "get_portfolio_summary":
             return portfolio_summary(list(self.props.values()), self.policy)
@@ -293,9 +309,7 @@ class Toolbox:
         if name in ("get_property", "find_help", "draft_quote_request"):
             # Models pass the label as often as the UPRN; accept either ("uprn" for old calls).
             key = str(args.get("home") or args.get("uprn") or "").strip()
-            p = self.props.get(key) or next(
-                (p for p in self.props.values() if p.label.casefold() == key.casefold()), None
-            )
+            p = self.home(key)
             if p is None:
                 return {
                     "error": f"{key!r} isn't in this portfolio.",

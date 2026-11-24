@@ -12,6 +12,7 @@ Nothing here is sent anywhere. The landlord copies the draft and sends it themse
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from engine.policy import Policy
 from report.portfolio_report import Property, Step, cost_range
@@ -185,3 +186,23 @@ def draft_quote_request(p: Property, policy: Policy, trade_key: str) -> dict:
 def _short(steps: list[Step]) -> str:
     first = steps[0].summary
     return first if len(steps) == 1 else f"{first} and {len(steps) - 1} more"
+
+
+ADDRESS_SLOT, NAME_SLOT = "[add the address]", "[your name]"
+
+
+def fill_draft(body: str, name: str = "", address: str = "", phone: str = "") -> str:
+    """Put the landlord's own details into a draft. Runs in the app only: never sent to the AI."""
+    out = body
+    if address.strip():
+        out = out.replace(ADDRESS_SLOT, address.strip())
+    if name.strip():
+        out = out.replace(NAME_SLOT, name.strip())
+    if phone.strip():
+        out = f"{out}\n{phone.strip()}"
+    return out
+
+
+def mailto(subject: str, body: str) -> str:
+    """Opens the landlord's own email app with the message ready. No recipient: they choose."""
+    return f"mailto:?subject={quote(subject)}&body={quote(body)}"

@@ -78,6 +78,14 @@ def test_get_property_by_label_or_uprn():
     assert tb.call("get_property", {"uprn": "100"})["label"] == "Flat A"
 
 
+def test_home_names_match_forgivingly():
+    tb = Toolbox([prop(), prop("200", "House B")], POLICY)
+    for typed in ["flat-a", "Flat A's", "the flat a", " FLAT  A "]:
+        assert tb.home(typed).label == "Flat A", typed
+    assert tb.home("Flat B") is None  # different home: no guessing
+    assert tb.home("house b").label == "House B"
+
+
 def test_portfolio_summary_totals():
     s = portfolio_summary([prop(), prop("200", "House B", exempt=True, lock=False,
                                         lo=6000, hi=17000)], POLICY)  # fmt: skip
@@ -212,9 +220,18 @@ def test_tool_talk_gets_one_retry():
     assert "Don't mention the tool" in b.client.seen[-1][-1]["content"]
 
 
-def test_tool_talk_kept_if_retry_repeats_it():
+def test_tool_talk_lead_in_cut_if_retry_repeats_it():
+    # Regression: Qwen kept "The tool states: ..." even after the retry.
     b = bot([_msg("The data says get quotes."), _msg("The data says get quotes.")])
-    assert b.ask("?").text.startswith("The data says get quotes.")  # cosmetic: not dropped
+    assert b.ask("?").text.startswith("Get quotes.")
+
+
+def test_strip_tool_talk_keeps_the_facts():
+    from agent.assistant import strip_tool_talk
+
+    text = 'House A is likely over the cap. The tool states: "You may be able to register."'
+    assert strip_tool_talk(text) == 'House A is likely over the cap. "You may be able to register."'
+    assert strip_tool_talk("Get quotes first.") == "Get quotes first."
 
 
 def test_draft_tool_blocked_unless_landlord_asks():
@@ -226,6 +243,32 @@ def test_draft_tool_blocked_unless_landlord_asks():
     b = bot([_msg(calls=[call]), _msg("Your quote request is below.")])
     r = b.ask("Write me a quote request for Flat A")
     assert "body" in r.tool_calls[0]["result"]
+
+
+def test_draft_claim_without_a_draft_gets_retry_then_dropped():
+    # Gap 1 ("did the agent do what it said?"): no draft this turn, so "it's below" is false.
+    b = bot([_msg("Flat A needs loft insulation. Your quote request is ready below."),
+             _msg("Flat A needs loft insulation. The message is below.")])  # fmt: skip
+    r = b.ask("What does Flat A need?")
+    assert "no tool result behind them" in b.client.seen[-1][-1]["content"]
+    assert r.text.startswith("Flat A needs loft insulation.") and "below" not in r.text
+
+
+def test_draft_claim_allowed_when_draft_succeeded():
+    call = ("draft_quote_request", '{"home": "Flat A", "trade": "insulation"}')
+    b = bot([_msg(calls=[call]), _msg("Your quote request is below.")])
+    r = b.ask("Write me a quote request for Flat A")
+    assert "Your quote request is below." in r.text and len(b.client.seen) == 2  # no retry
+
+
+def test_send_claims_never_allowed():
+    from agent.assistant import unbacked_claims
+
+    done = [{"name": "draft_quote_request", "result": {"body": "x"}}]
+    assert unbacked_claims("I've sent it to the electrician.", done) == ["I've sent"]
+    assert unbacked_claims("It has been emailed.", done) == ["has been emailed"]
+    # Talking about ratings "below C" is not a claim.
+    assert unbacked_claims("Flat A's rating is below C. It's below the cap.", []) == []
 
 
 def test_endless_tool_calls_fall_back():

@@ -27,7 +27,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from agent.assistant import Assistant
-from agent.help import draft_quote_request, find_help
+from agent.help import draft_quote_request, fill_draft, find_help, mailto
 from agent.tools import Toolbox, property_facts
 from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
@@ -39,6 +39,7 @@ from webapp.logic import (
     DailyCounter,
     build_toolbox,
     demo_entries,
+    follow_ups,
     load_demo,
     needs_input_message,
     resolve_rows,
@@ -105,6 +106,30 @@ def check(entries: list[dict]) -> None:
     st.session_state.toolbox = toolbox
     st.session_state.chat = []
     st.session_state.pop("bot", None)
+
+
+def draft_box(d: dict, key: str) -> None:
+    """A draft quote request with a short form. The landlord's details stay in the app:
+    they fill the placeholders here and are never sent to the AI."""
+    with st.form(key, border=False):
+        c1, c2 = st.columns(2)
+        name = c1.text_input(t("form_name"), key=f"{key}_name")
+        phone = c2.text_input(t("form_phone"), key=f"{key}_phone")
+        address = st.text_input(t("form_address"), key=f"{key}_address")
+        st.form_submit_button(t("form_fill"))
+    body = fill_draft(d["body"], name, address, phone)
+    st.code(f"Subject: {d['subject']}\n\n{body}", language=None)  # has a copy button
+    st.link_button(t("open_email"), mailto(d["subject"], body))
+    st.caption(t("form_note"))
+
+
+def offer_draft(home_id: str, trade: str, who: str) -> None:
+    """A "Write to ..." next step: built by code, no AI call, not counted as a question."""
+    p = ss.toolbox.home(home_id)
+    d = draft_quote_request(p, POLICY, trade)
+    call = {"name": "draft_quote_request", "args": {"home": p.label, "trade": trade}, "result": d}
+    ss.chat.append(("assistant", t("draft_ready", who=who), [call]))
+    st.rerun()
 
 
 def ask(question: str) -> None:
@@ -252,7 +277,7 @@ if toolbox and toolbox.props:
                     if choice is not None:
                         d = draft_quote_request(p, POLICY, choice["trade"])
                         st.caption(t("draft_note"))
-                        st.code(f"Subject: {d['subject']}\n\n{d['body']}", language=None)
+                        draft_box(d, f"form_{p.property_id}_{choice['trade']}")
 
     st.caption(t("fix_early_note"))
     with st.expander(t("as_table")):  # the accessible table view of the cards above
@@ -273,17 +298,34 @@ if toolbox and toolbox.props:
     else:
         if "bot" not in ss:
             ss.bot = Assistant(toolbox)
-        for role, content, calls in ss.get("chat", []):
+        for i, (role, content, calls) in enumerate(ss.get("chat", [])):
             with st.chat_message(role):
                 st.markdown(content)
-                for c in calls:  # drafts come straight from the tool, not the model
+                for j, c in enumerate(calls):  # drafts come straight from the tool, not the model
                     if c["name"] == "draft_quote_request" and "body" in c["result"]:
-                        d = c["result"]
-                        st.code(f"Subject: {d['subject']}\n\n{d['body']}", language=None)
+                        draft_box(c["result"], f"form_chat_{i}_{j}")
                 if calls:
                     with st.expander(t("working")):
                         for c in calls:
                             st.code(f"{c['name']}({c['args'] or ''})", language=None)
+        chat = ss.get("chat", [])
+        over_limit = DEMO and sum(r == "user" for r, _, _ in chat) >= DEMO_QUESTIONS_PER_VISITOR
+        if chat and chat[-1][0] == "assistant":  # next steps, picked by code from the tools used
+            steps = [
+                f
+                for f in follow_ups(chat[-1][2], toolbox)
+                if f["kind"] == "draft" or not over_limit
+            ]
+            if steps:
+                st.caption(t("next_steps"))
+                cols = st.columns(len(steps))
+                for k, (col, f) in enumerate(zip(cols, steps, strict=True)):
+                    label = t(f["label_key"], home=f.get("home", ""), who=f.get("who", ""))
+                    if col.button(label, key=f"next_{len(chat)}_{k}", width="stretch"):
+                        if f["kind"] == "draft":
+                            offer_draft(f["home"], f["trade"], f["who"])
+                        else:
+                            ask(label)
         asked = sum(role == "user" for role, _, _ in ss.get("chat", []))
         if DEMO and asked >= DEMO_QUESTIONS_PER_VISITOR:
             st.info(t("chat_limit", n=DEMO_QUESTIONS_PER_VISITOR))

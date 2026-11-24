@@ -98,3 +98,21 @@ def test_help_list_escapes_and_links_to_registers():
     assert "<b>Loft</b>" not in out and "&lt;b&gt;loft&lt;/b&gt;" in out
     assert "https://www.trustmark.org.uk/find-a-tradesperson" in out
     assert "https://www.gov.uk/get-new-energy-certificate" in out
+
+
+def test_fill_draft_uses_landlord_details_and_keeps_slots_if_blank():
+    from agent.help import fill_draft
+
+    body = draft_quote_request(prop(), POLICY, "assessor")["body"]
+    filled = fill_draft(body, name="Sam", address="1 My Road", phone="07700 900000")
+    assert "1 My Road" in filled and "Sam" in filled and filled.endswith("07700 900000")
+    assert "[add the address]" not in filled and "[your name]" not in filled
+    assert fill_draft(body) == body  # nothing typed: placeholders stay
+
+
+def test_mailto_has_no_recipient_and_encodes_the_message():
+    from agent.help import mailto
+
+    link = mailto("Quote request: Loft", "Hello,\n\nA & B")
+    assert link.startswith("mailto:?subject=Quote%20request%3A%20Loft&body=")
+    assert "%0A" in link and "%26" in link and "@" not in link

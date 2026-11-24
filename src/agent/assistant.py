@@ -126,6 +126,45 @@ def wants_draft(question: str) -> bool:
     return bool(DRAFT_REQUEST.search(question or ""))
 
 
+# Lead-ins like "The tool states: " that survive the retry are cut; the facts after them stay.
+TOOL_LEAD = re.compile(
+    r"(?i)\b(the|my) (tools?|data)( for [^.:]{1,40})? (states?|says?|shows?|wording is)[:,]?\s*"
+)
+
+
+def strip_tool_talk(text: str) -> str:
+    def cap(m: re.Match) -> str:  # capitalise the start of a sentence left behind
+        return m.group(1) + m.group(2).upper()
+
+    out = TOOL_LEAD.sub("", text)
+    out = re.sub(r'(^|[.!?]\s+|\n)["“]?([a-z])', cap, out)
+    return out
+
+
+# "Did the agent do what it said?" A reply may only say a message is ready if a draft was
+# actually made this turn, and it may never say it sent, emailed or booked anything: the app
+# never does. (Qwen said "the full quote request is below" after its draft was blocked.)
+DRAFT_CLAIMS = [
+    r"(?i)\b(quote request|message|draft|email|letter)\b[^.!?\n]{0,60}"
+    r"\b(below|ready|drafted|written)\b",
+    r"(?i)\b(it's|it is|shown|see it|find it)\s+below\b(?!\s+(c\b|band|the|£|\d))",
+]
+SEND_CLAIMS = [
+    r"(?i)\b(i've|i have|we've|we have|i|we)\s+(just\s+)?"
+    r"(sent|emailed|e-mailed|contacted|booked)\b",
+    r"(?i)\b(has|have) been (sent|emailed|booked)\b",
+]
+
+
+def unbacked_claims(text: str, calls: list[dict[str, Any]]) -> list[str]:
+    """Action claims in `text` with no tool evidence in this turn's calls."""
+    drafted = any(
+        c["name"] == "draft_quote_request" and "body" in (c.get("result") or {}) for c in calls
+    )
+    pats = SEND_CLAIMS + ([] if drafted else DRAFT_CLAIMS)
+    return sorted({m.group(0) for p in pats for m in re.finditer(p, text)})
+
+
 def tool_talk(text: str) -> list[str]:
     return sorted({m.group(0).lower() for m in TOOL_TALK.finditer(text)})
 
@@ -244,8 +283,8 @@ class Assistant:
             return [m["content"] for m in self.messages if m["role"] == "tool"]
 
         bad, legal = ungrounded_amounts(text, results()), legal_conclusions(text)
-        talk = tool_talk(text)
-        if bad or legal or talk:  # one retry covers every problem
+        talk, claims = tool_talk(text), unbacked_claims(text, calls)
+        if bad or legal or talk or claims:  # one retry covers every problem
             fixes = []
             if bad:
                 fixes.append(f"These amounts aren't in the tool results: {', '.join(bad)}.")
@@ -258,11 +297,22 @@ class Assistant:
                 fixes.append(
                     f"Don't mention {', '.join(talk)}. Say the facts directly to the landlord."
                 )
+            if claims:
+                fixes.append(
+                    f"These claims have no tool result behind them: {', '.join(claims)}. Only "
+                    "say a message is ready after draft_quote_request succeeds. The app never "
+                    "sends, emails or books anything."
+                )
             self.messages.append({"role": "user", "content": " ".join(fixes) + " Answer again."})
             retry = self._run(calls)
             if retry is not None:
                 text = retry
                 bad, legal = ungrounded_amounts(text, results()), legal_conclusions(text)
+                claims = unbacked_claims(text, calls)
+        if claims:  # still there after the retry: those sentences go
+            text = drop_sentences(text, SEND_CLAIMS + DRAFT_CLAIMS) or FALLBACK
+        if tool_talk(text):  # still there after the retry: cut the lead-ins, keep the facts
+            text = strip_tool_talk(text)
         if legal:  # still there after the retry: the landlord never sees those sentences
             text = drop_sentences(text, LEGAL_PATTERNS) or FALLBACK
         grounded = not bad

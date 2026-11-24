@@ -30,9 +30,9 @@ The landlord enters their homes. They get a table showing each home's rating, th
 it needs, its status, the cheapest route to C and whether that's likely within the cap. Then
 they **chat with an agent on Nebius Token Factory** that explains the results in plain English.
 
-> **You:** Is Home 4 exempt?
+> **You:** Is House A exempt?
 >
-> **Agent:** Home 4 has a likely over the cap status. You may be able to register an exemption
+> **Agent:** House A has a likely over the cap status. You may be able to register an exemption
 > after spending up to £10,000. The exemption process for the 2030 rules isn't published yet.
 >
 > *Indicative — a survey by an accredited assessor is required. Not legal advice.*
@@ -53,13 +53,20 @@ flowchart LR
 
 - **Model:** `Qwen/Qwen3-235B-A22B-Instruct-2507`, called through the OpenAI-compatible Token
   Factory API with tool calling (`src/agent/assistant.py`).
-- **Tools** (`src/agent/tools.py`): portfolio summary, one home in detail, and the proposed
-  rules. Every number and sentence they return comes from the engine and the report wording.
+- **Tools** (`src/agent/tools.py`): portfolio summary, one home in detail, the proposed rules,
+  **who to contact** (assessor, installers and engineers, linked to official registers) and
+  **a ready-to-send quote request**. Every number and sentence comes from code, not the model.
+- **Next steps, not just answers.** After each reply the app offers buttons picked by code,
+  such as "Write to a registered electrician". The landlord adds their details in a short form
+  (never sent to the AI), then copies the message or opens it in their own email app.
+  Nothing is sent automatically.
 - **Guardrails enforced in code**, not just asked for in the prompt:
   - **Amounts are checked.** Every £ figure in a reply must appear in the tool output. If one
     doesn't, the model gets one retry; if it's still wrong, the reply is flagged.
   - **Legal conclusions are blocked.** Phrases like "is not exempt" or "must" trigger a retry.
     If they're still there, those sentences are removed.
+  - **Claims need evidence.** A reply can only say a message is ready if the draft tool really
+    ran that turn, and it can never say it sent, emailed or booked anything. The app never does.
   - **The disclaimer is always added** by code, so the model can't leave it out.
   - **Privacy.** Register addresses never reach the model. It sees UPRNs and the landlord's
     own labels only.
@@ -67,7 +74,7 @@ flowchart LR
 ### Why this model
 
 `scripts/eval_models.py` scores Token Factory models on landlord questions, including legal
-traps ("Is Home 4 exempt?", "Do I have to by law?") and a question the data can't answer. It
+traps ("Is House A exempt?", "Do I have to by law?") and a question the data can't answer. It
 uses real token costs from the models API.
 
 | Model | Passed | Time per answer | Cost per 1,000 questions |
@@ -79,7 +86,10 @@ uses real token costs from the models API.
 | Qwen3-30B-A3B-Instruct-2507 | 3/6 | 2.8s | $0.23 |
 | Nemotron-3.5-Lightning | 2/6 | 1.6s | $0.28 |
 
-On a repeat run of 3 rounds, Qwen passed 17 of 18 answers. All 18 had correct amounts and no
+The eval also runs **multi-turn scenarios that start mid-conversation**: a bare "yes", "the
+second one", and an earlier reply with a planted wrong cost the agent must re-check. With
+these, Qwen passes 12 of 12. On a repeat run of 3 rounds of the first six questions, Qwen
+passed 17 of 18 answers. All 18 had correct amounts and no
 legal conclusions. Reading the answers by hand also found bugs the scores missed, such as an
 invented exemption rule. They're fixed, with regression tests.
 

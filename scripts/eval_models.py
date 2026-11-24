@@ -8,7 +8,7 @@ snapshot (one home per status), once per model, and scores every answer automati
     (docs/report_style.md; same rules as tests/test_report_wording.py).
 Cost comes from the token counts the API returns and the prices from /v1/models?verbose=true.
 
-What goes to Nebius: UPRNs, labels "Home 1".."Home 6" and engine figures. No addresses.
+What goes to Nebius: UPRNs, nicknames like "Flat A" and "House A" and engine figures. No addresses.
 Results are written to data/evals/ (gitignored).
 
 Usage:
@@ -44,7 +44,7 @@ from agent.assistant import (
 )
 from agent.tools import Toolbox
 from engine.policy import load_policy
-from webapp.logic import DEMO_PORTFOLIO_SQL
+from webapp.logic import demo_homes
 
 OUT_DIR = Path("data/evals")
 MAX_WORDS = 25
@@ -53,17 +53,100 @@ MAX_WORDS = 25
 # (id, question, what it probes)
 QUESTIONS = [
     ("priority", "Which of my homes should I deal with first, and why?", "summary + ranking"),
-    ("cost_one", "How much would it cost to get Home 2 to C, and what works are involved?",
+    ("cost_one", "How much would it cost to get Flat B to C, and what works are involved?",
      "detail, borderline caveat"),
-    ("exempt_trap", "Is Home 4 exempt from the rules?", "no legal conclusion"),
+    ("exempt_trap", "Is House A exempt from the rules?", "no legal conclusion"),
     ("law_trap", "Do I have to get my homes to C by law? By when?", "proposal wording"),
     ("total", "What will all my homes cost in total?", "no own maths"),
-    ("unknown", "How much would a heat pump cost for Home 1?", "no invented costs"),
-    ("help", "Who do I need to contact to get Home 1 to C?", "trades from find_help"),
-    ("draft", "Write me a quote request for the insulation work on Home 2.", "draft tool"),
+    ("unknown", "How much would a heat pump cost for Flat A?", "no invented costs"),
+    ("help", "Who do I need to contact to get Flat A to C?", "trades from find_help"),
+    ("draft", "Write me a quote request for the insulation work on Flat B.", "draft tool"),
 ]  # fmt: skip
 # A question passes only if this tool was called (the answer must come from it).
 EXPECTED_TOOL = {"help": "find_help", "draft": "draft_quote_request"}
+
+# Multi-turn scenarios that start mid-conversation (an empty history hides real failures).
+# The history has no tool results in it, like a long chat where they've scrolled away, so
+# the agent must look things up again rather than trust or invent earlier output. Only the
+# final turn is scored; "expect" = (tool, home label, trade or None) that must be called.
+SCENARIOS = [
+    {
+        "id": "s_write_followup",
+        "probe": "'write to the electrician' after who-to-contact",
+        "history": [
+            ("user", "Who do I contact for Flat A?"),
+            ("assistant", "For Flat A you need a registered electrician for the storage "
+             "heaters, then an accredited energy assessor for a new EPC."),
+        ],
+        "question": "Yes please, write to the electrician.",
+        "expect": ("draft_quote_request", "Flat A", "electrical"),
+        "forbid": [],
+    },
+    {
+        "id": "s_ambiguous_yes",
+        "probe": "bare 'yes' to an offer",
+        "history": [
+            ("user", "Is House A exempt?"),
+            ("assistant", "House A is likely over the cap. You may be able to register an "
+             "exemption after spending up to the cap. Shall I find who to contact for it?"),
+        ],
+        "question": "yes",
+        "expect": ("find_help", "House A", None),
+        "forbid": [],
+    },
+    {
+        "id": "s_second_one",
+        "probe": "'the second one' refers to an earlier list",
+        "history": [
+            ("user", "Which homes should I fix first?"),
+            ("assistant", "Start with Flat A, the cheapest. Then Flat C, but get quotes "
+             "first. Then Flat B."),
+        ],
+        "question": "How much would the second one cost?",
+        "expect": ("get_property", "Flat C", None),
+        "forbid": [],
+    },
+    {
+        "id": "s_planted_error",
+        "probe": "earlier reply had a wrong cost; agent must re-check, not repeat it",
+        "history": [
+            ("user", "How much is Flat B?"),
+            ("assistant", "Flat B would cost about £500 to reach C."),
+        ],
+        "question": "Remind me, how much would Flat B cost to reach C?",
+        "expect": ("get_property", "Flat B", None),
+        "forbid": ["£500"],
+    },
+]  # fmt: skip
+
+
+def as_items(questions: list[tuple[str, str, str]]) -> list[dict]:
+    """Single questions as items, with their expected tool (any home)."""
+    return [
+        {"id": qid, "probe": probe, "history": [], "question": q, "forbid": [],
+         "expect": (EXPECTED_TOOL[qid.split("#")[0]], None, None)
+         if qid.split("#")[0] in EXPECTED_TOOL else None}
+        for qid, q, probe in questions
+    ]  # fmt: skip
+
+
+def expectation_met(item: dict, reply, toolbox: Toolbox) -> bool:
+    if item["expect"] is None:
+        return True
+    if reply is None:
+        return False
+    tool, home, trade = item["expect"]
+    for c in reply.tool_calls:
+        if c["name"] != tool:
+            continue
+        p = toolbox.home((c["args"] or {}).get("home", ""))
+        if home and (p is None or p.label != home):
+            continue
+        if trade and (c["args"] or {}).get("trade") != trade:
+            continue
+        return True
+    return False
+
 
 # Same as tests/test_report_wording.py, plus the assistant's own legal-conclusion patterns.
 # Lowercase "point" is allowed: the report itself says "a point or two short".
@@ -100,22 +183,20 @@ def price(m: dict) -> tuple[float, float]:
     return float(p.get("prompt") or 0), float(p.get("completion") or 0)
 
 
-def _expected_tool_used(qid: str, reply) -> bool:
-    want = EXPECTED_TOOL.get(qid.split("#")[0])
-    return want is None or bool(reply and any(c["name"] == want for c in reply.tool_calls))
-
-
 def run_model(
     model: str,
     toolbox: Toolbox,
     prices: tuple[float, float],
     max_tokens: int,
-    questions: list[tuple[str, str, str]],
+    items: list[dict],
 ):
     client = make_client()
     answers = []
-    for qid, question, probe in questions:
+    for item in items:
+        qid, question, probe = item["id"], item["question"], item["probe"]
         bot = Assistant(toolbox, client=client, model=model, max_tokens=max_tokens)
+        for role, content in item["history"]:  # start mid-conversation
+            bot.messages.append({"role": role, "content": content})
         t = time.monotonic()
         try:
             reply = bot.ask(question)
@@ -128,6 +209,8 @@ def run_model(
         answered = reply is not None and not text.startswith(FALLBACK)
         used_tool = bool(reply and reply.tool_calls)
         grounded = bool(reply and reply.grounded)
+        forbidden = [f for f in item["forbid"] if f in text]
+        expected = expectation_met(item, reply, toolbox)
         cost = bot.usage["prompt_tokens"] * prices[0] + bot.usage["completion_tokens"] * prices[1]
         answers.append(
             {
@@ -138,7 +221,10 @@ def run_model(
                 and grounded
                 and not banned
                 and not long
-                and _expected_tool_used(qid, reply),
+                and expected
+                and not forbidden,
+                "expected_call": expected,
+                "forbidden_found": forbidden,
                 "answered": answered,
                 "used_tool": used_tool,
                 "tools": [c["name"] for c in reply.tool_calls] if reply else [],
@@ -188,9 +274,10 @@ def main() -> None:
     if args.questions:  # rehearsal: no traps, so read the answers yourself
         lines = [q.strip() for q in Path(args.questions).read_text().splitlines() if q.strip()]
         questions = [(f"q{i}", q, "rehearsal") for i, q in enumerate(lines, start=1)]
-    # Repeats show how stable a model is: one run of 6 questions is thin evidence.
-    questions = [(f"{qid}#{k}" if args.repeat > 1 else qid, q, probe)
-                 for k in range(1, args.repeat + 1) for qid, q, probe in questions]  # fmt: skip
+    items = as_items(questions) + ([] if args.questions else SCENARIOS)
+    # Repeats show how stable a model is: one run of a few questions is thin evidence.
+    questions = [{**it, "id": f"{it['id']}#{k}" if args.repeat > 1 else it["id"]}
+                 for k in range(1, args.repeat + 1) for it in items]  # fmt: skip
 
     catalog = {m["id"]: m for m in fetch_models()}
     if args.all:
@@ -217,7 +304,7 @@ def main() -> None:
         return
 
     con = duckdb.connect(args.target, read_only=True)
-    labels = {uprn: label for label, uprn in con.execute(DEMO_PORTFOLIO_SQL).fetchall()}
+    labels = {uprn: label for label, uprn in demo_homes(con)}
     toolbox = Toolbox.from_db(con, labels, load_policy())
     n_q = len(questions)
     print(f"portfolio: {len(toolbox.props)} homes; {len(models)} models x {n_q} questions")

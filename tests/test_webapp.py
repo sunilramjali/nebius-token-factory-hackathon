@@ -26,7 +26,7 @@ ODD = Policy(70, 12_345, date(2028, 1, 2), 7, compliance_deadline=date(2031, 3, 
 
 @pytest.mark.parametrize("key", sorted(TEXT))
 def test_ui_text_follows_style_guide(key):
-    t = text(key, POLICY, n=10)
+    t = text(key, POLICY, n=10, home="Home 1", who="an accredited energy assessor")
     for s in sentences(t):
         assert len(s.split()) <= MAX_WORDS, s
     for pat in BANNED + LEGAL_PATTERNS:
@@ -94,7 +94,14 @@ def test_committed_demo_file_has_no_addresses():
     assert not re.search(r"\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b", raw, re.I), "postcode-like"
     assert "register_address" not in raw and "address_line" not in raw
     homes = load_demo()
-    assert [p.label for p in homes] == [f"Home {i}" for i in range(1, 7)]
+    assert [p.label for p in homes] == [
+        "Flat A",
+        "Flat B",
+        "Flat C",
+        "House A",
+        "Flat D",
+        "House B",
+    ]
     assert len({table_rows(Toolbox(homes, POLICY))[i]["Status"] for i in range(6)}) == 6
 
 
@@ -140,3 +147,48 @@ def test_tiles_show_portfolio_counts():
     labels = dict.fromkeys(["below", "fix_early", "over_cap", "spend", "spend_note"], "x")
     out = tiles(Toolbox([prop(), prop("400", "Done", score=72, lock=False)], POLICY), labels)
     assert "1 of 2" in out and "£400–£950" in out
+
+
+# --- next steps --------------------------------------------------------------------------
+
+
+def test_follow_ups_after_find_help_offer_drafts_in_work_order():
+    from agent.help import find_help
+    from webapp.logic import follow_ups
+
+    p = prop()
+    tb = Toolbox([p], POLICY)
+    calls = [{"name": "find_help", "args": {"home": "Flat A"}, "result": find_help(p, POLICY)}]
+    steps = follow_ups(calls, tb)
+    # prop()'s one measure has no EPC code -> "general" (retrofit coordinator), then assessor.
+    assert [(s["kind"], s["trade"]) for s in steps] == [("draft", "general"), ("draft", "assessor")]
+    assert all(s["home"] == "100" for s in steps) and len(steps) <= 3
+
+
+def test_follow_ups_after_summary_suggest_the_first_fix_early_home():
+    from agent.tools import portfolio_summary
+    from webapp.logic import follow_ups
+
+    homes = [prop("400", "Done", score=72, lock=False), prop()]
+    tb = Toolbox(homes, POLICY)
+    calls = [{"name": "get_portfolio_summary", "args": {},
+              "result": portfolio_summary(homes, POLICY)}]  # fmt: skip
+    steps = follow_ups(calls, tb)
+    labels = [text(s["label_key"], POLICY, home=s["home"]) for s in steps]
+    assert labels == ["Who do I call for Flat A?", "What work does Flat A need?"]
+
+
+def test_no_follow_ups_for_already_c_or_unknown_tools():
+    from webapp.logic import follow_ups
+
+    tb = Toolbox([prop()], POLICY)
+    done = {"name": "get_property", "args": {}, "result": {"label": "Done", "gap_to_c": 0}}
+    assert follow_ups([done, {"name": "get_rules", "args": {}, "result": {}}], tb) == []
+
+
+def test_nicknames_from_property_type_never_addresses():
+    from webapp.logic import nicknames
+
+    assert nicknames(["flat", "house", "flat", None, "maisonette"]) == [
+        "Flat A", "House A", "Flat B", "Home A", "Maisonette A"
+    ]  # fmt: skip

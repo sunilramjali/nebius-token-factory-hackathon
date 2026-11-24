@@ -15,14 +15,14 @@ import re
 import duckdb
 
 from report.portfolio_report import load_properties
-from webapp.logic import DEMO_FILE, DEMO_PORTFOLIO_SQL, dump_demo
+from webapp.logic import DEMO_FILE, demo_homes, dump_demo
 
 POSTCODE = re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b", re.I)
 
 
 def main() -> None:
     con = duckdb.connect(os.environ.get("DUCKDB_TARGET", "data/epc.duckdb"), read_only=True)
-    labels = {str(uprn): label for label, uprn in con.execute(DEMO_PORTFOLIO_SQL).fetchall()}
+    labels = {str(uprn): label for label, uprn in demo_homes(con)}
     props, missing = load_properties(con, list(labels), labels, None, strict=True)
     data = dump_demo(props)
     out = json.dumps(data, indent=1, ensure_ascii=False)

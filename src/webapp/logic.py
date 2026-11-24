@@ -60,7 +60,21 @@ TEXT = {
     "see_work": "See the work and who to call",
     "who_to_contact": "Who to contact",
     "draft_for": "Write a message to",
-    "draft_note": "Copy it, add your address, and send it yourself.",
+    "draft_note": "Add your details, then copy it or open it in your email.",
+    # Suggested next steps after an answer, and the draft form
+    "next_steps": "Next steps",
+    "follow_who": "Who do I call for {home}?",
+    "follow_work": "What work does {home} need?",
+    "follow_write": "Write to {who}",
+    "draft_ready": (
+        "Here's a message for {who}. Add your details, then copy it or open it in your email."
+    ),
+    "form_name": "Your name",
+    "form_address": "The home's address",
+    "form_phone": "Phone (optional)",
+    "form_fill": "Fill in the message",
+    "open_email": "Open in your email app",
+    "form_note": "Your details stay on this page. We don't send them to the AI.",
     "as_table": "Show as a table",
     "report": "Download the full report",
     # Chat
@@ -87,26 +101,27 @@ DEMO_FILE = Path(__file__).resolve().parents[2] / "examples" / "demo_portfolio.j
 # the demo button and by scripts/eval_models.py. Identified by UPRN only: no addresses.
 DEMO_PORTFOLIO_SQL = """
 WITH base AS (
-    SELECT r.* FROM analytics.route_results r
+    SELECT r.*, c.property_type FROM analytics.route_results r
     JOIN marts.fct_property_compliance c USING (property_id)
     WHERE c.is_private_rented AND r.confidence = 'high' AND r.uprn IS NOT NULL
 )
-SELECT label, uprn FROM (
-  (SELECT 'Home 1' AS label, uprn FROM base WHERE lock_in_candidate AND NOT borderline
+SELECT slot, uprn, property_type FROM (
+  (SELECT 1 AS slot, uprn, property_type FROM base WHERE lock_in_candidate AND NOT borderline
      AND NOT cap_verdict_uncertain AND NOT lock_in_needs_boiler ORDER BY uprn LIMIT 1)
   UNION ALL
-  (SELECT 'Home 2', uprn FROM base WHERE lock_in_candidate AND borderline
+  (SELECT 2, uprn, property_type FROM base WHERE lock_in_candidate AND borderline
      AND NOT lock_in_needs_boiler AND safer_cost_mid IS NOT NULL ORDER BY uprn LIMIT 1)
   UNION ALL
-  (SELECT 'Home 3', uprn FROM base WHERE lock_in_candidate AND cap_verdict_uncertain
+  (SELECT 3, uprn, property_type FROM base WHERE lock_in_candidate AND cap_verdict_uncertain
      AND NOT borderline AND NOT lock_in_needs_boiler ORDER BY uprn LIMIT 1)
   UNION ALL
-  (SELECT 'Home 4', uprn FROM base WHERE exempt_reason = 'over_cap' ORDER BY uprn LIMIT 1)
+  (SELECT 4, uprn, property_type FROM base WHERE exempt_reason = 'over_cap' ORDER BY uprn LIMIT 1)
   UNION ALL
-  (SELECT 'Home 5', uprn FROM base WHERE exempt_reason = 'cannot_reach_c' ORDER BY uprn LIMIT 1)
+  (SELECT 5, uprn, property_type FROM base WHERE exempt_reason = 'cannot_reach_c'
+     ORDER BY uprn LIMIT 1)
   UNION ALL
-  (SELECT 'Home 6', uprn FROM base WHERE NOT below_c ORDER BY uprn LIMIT 1)
-) ORDER BY label
+  (SELECT 6, uprn, property_type FROM base WHERE NOT below_c ORDER BY uprn LIMIT 1)
+) ORDER BY slot
 """
 
 
@@ -171,10 +186,28 @@ class DailyCounter:
             return True
 
 
+def nicknames(property_types: list[str | None]) -> list[str]:
+    """Demo labels the way landlords talk: "Flat A", "Flat B", "House A". Built from the
+    property type (open data) only. Never a made-up address: it could be someone's real home."""
+    seen: dict[str, int] = {}
+    out = []
+    for t in property_types:
+        kind = (t or "home").strip().capitalize()
+        out.append(f"{kind} {chr(ord('A') + seen.get(kind, 0))}")
+        seen[kind] = seen.get(kind, 0) + 1
+    return out
+
+
+def demo_homes(con: duckdb.DuckDBPyConnection) -> list[tuple[str, int]]:
+    """(nickname, UPRN) for the 6 demo homes, in situation order."""
+    rows = con.execute(DEMO_PORTFOLIO_SQL).fetchall()
+    return list(zip(nicknames([r[2] for r in rows]), [r[1] for r in rows], strict=True))
+
+
 def demo_entries(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
     return [
         {"label": label, "address": "", "postcode": "", "uprn": str(uprn)}
-        for label, uprn in con.execute(DEMO_PORTFOLIO_SQL).fetchall()
+        for label, uprn in demo_homes(con)
     ]
 
 
@@ -237,3 +270,40 @@ def table_rows(toolbox: Toolbox) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+MAX_FOLLOW_UPS = 3
+
+
+def follow_ups(calls: list[dict[str, Any]], toolbox: Toolbox) -> list[dict[str, Any]]:
+    """Next steps to offer after an answer, picked by code from the tools the agent used.
+
+    kind "draft" builds a quote request in code (no AI call); kind "ask" sends a question.
+    """
+    out: list[dict[str, Any]] = []
+    helped: set[str] = set()
+    for c in calls:
+        res, args = c.get("result") or {}, c.get("args") or {}
+        if c["name"] == "find_help" and res.get("needed"):
+            p = toolbox.home(args.get("home"))
+            helped.add(res["home"])
+            for n in res["needed"][:2]:
+                if p is not None:
+                    out.append({"kind": "draft", "home": p.property_id, "trade": n["trade"],
+                                "who": n["who"], "label_key": "follow_write"})  # fmt: skip
+        elif c["name"] == "get_property" and "label" in res and res.get("gap_to_c"):
+            out.append({"kind": "ask", "home": res["label"], "label_key": "follow_who"})
+        elif c["name"] == "get_portfolio_summary":
+            first = next((h for h in res.get("homes", []) if h["status"].startswith("Fix")), None)
+            if first:
+                out.append({"kind": "ask", "home": first["label"], "label_key": "follow_who"})
+                out.append({"kind": "ask", "home": first["label"], "label_key": "follow_work"})
+    seen, unique = set(), []
+    for f in out:
+        if f["kind"] == "ask" and f["label_key"] == "follow_who" and f["home"] in helped:
+            continue  # already answered "who do I call" for this home
+        key = (f["kind"], f.get("home"), f.get("trade"), f["label_key"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+    return unique[:MAX_FOLLOW_UPS]

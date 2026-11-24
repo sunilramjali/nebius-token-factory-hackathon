@@ -3,7 +3,7 @@
  "homes": [
   {
    "property_id": "46000070",
-   "label": "Home 1",
+   "label": "Flat A",
    "property_type": "flat",
    "registration_date": "2023-08-16",
    "current_score": 60,
@@ -45,7 +45,7 @@
   },
   {
    "property_id": "46000102",
-   "label": "Home 2",
+   "label": "Flat B",
    "property_type": "flat",
    "registration_date": "2025-07-23",
    "current_score": 54,
@@ -132,7 +132,7 @@
   },
   {
    "property_id": "46000509",
-   "label": "Home 3",
+   "label": "Flat C",
    "property_type": "flat",
    "registration_date": "2022-09-08",
    "current_score": 65,
@@ -185,7 +185,7 @@
   },
   {
    "property_id": "46000198",
-   "label": "Home 4",
+   "label": "House A",
    "property_type": "house",
    "registration_date": "2024-12-05",
    "current_score": 37,
@@ -305,7 +305,7 @@
   },
   {
    "property_id": "46000134",
-   "label": "Home 5",
+   "label": "Flat D",
    "property_type": "flat",
    "registration_date": "2021-12-02",
    "current_score": 56,
@@ -358,7 +358,7 @@
   },
   {
    "property_id": "46000003",
-   "label": "Home 6",
+   "label": "House B",
    "property_type": "house",
    "registration_date": "2022-11-22",
    "current_score": 71,
