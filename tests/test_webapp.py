@@ -209,3 +209,11 @@ def test_typed_addresses_use_only_what_the_landlord_typed():
     out = typed_addresses([typed, has_pc, by_uprn, unmatched])
     assert out == {"11": "Flat 2, 15 Example Road, E99 9ZZ", "12": "3 Example Road E99 9ZZ"}
     assert "REGISTER" not in str(out)
+
+
+def test_demo_details_are_fictional():
+    from webapp.logic import DEMO_LANDLORD
+
+    # Ofcom's drama range (07700 900000-900999): can never reach a real person.
+    assert DEMO_LANDLORD["phone"].replace(" ", "").startswith("07700900")
+    assert 0 <= int(DEMO_LANDLORD["phone"].replace(" ", "")[-3:]) <= 999

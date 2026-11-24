@@ -79,9 +79,12 @@ TEXT = {
     "form_address": "The home's address",
     "form_address_known": "Address from your list: {address}",
     "form_phone": "Phone (optional)",
-    "form_fill": "Fill in the message",
     "open_email": "Open in your email app",
     "form_note": "Your details stay on this page. We don't send them to the AI.",
+    "your_details": "Your details for messages",
+    "details_note": "Type them once. Every message uses them. We don't send them to the AI.",
+    "details_example": "Example details for this demo. The phone number can't reach anyone.",
+    "details_missing": "Add your name and phone under “Your details for messages” to fill in.",
     "as_table": "Show as a table",
     "report": "Download the full report",
     # Chat
@@ -97,6 +100,10 @@ TEXT = {
     "chat_daily": "The demo has had a busy day. Please try again tomorrow.",
     "too_long": "Please keep questions under {n} characters.",
 }
+
+# Fictional details that pre-fill the demo's messages, so judges can click straight through.
+# 07700 900xxx is Ofcom's range reserved for drama: it can never reach a real person.
+DEMO_LANDLORD = {"name": "Sam Taylor", "phone": "07700 900123"}
 
 # Hosted demo limits, so a public link can't run up the Nebius bill (about $0.0007 a question).
 DEMO_QUESTIONS_PER_VISITOR = 10

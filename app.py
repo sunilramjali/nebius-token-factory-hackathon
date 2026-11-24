@@ -33,6 +33,7 @@ from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
 from webapp import view
 from webapp.logic import (
+    DEMO_LANDLORD,
     DEMO_QUESTIONS_PER_DAY,
     DEMO_QUESTIONS_PER_VISITOR,
     MAX_QUESTION_CHARS,
@@ -110,25 +111,32 @@ def check(entries: list[dict]) -> None:
     st.session_state.pop("bot", None)
 
 
+def details_box() -> None:
+    """The landlord's name and phone, typed once and used in every message (pre-filled with
+    fictional examples in the demo). Kept in this browser session; never sent to the AI."""
+    with st.expander(t("your_details"), expanded=not ss.get("me_name")):
+        c1, c2 = st.columns(2)
+        c1.text_input(t("form_name"), key="me_name")
+        c2.text_input(t("form_phone"), key="me_phone")
+        st.caption(t("details_example") if DEMO else t("details_note"))
+
+
 def draft_box(d: dict, key: str) -> None:
-    """A draft quote request with a short form. The landlord's details stay in the app:
-    they fill the placeholders here and are never sent to the AI. The address is the one the
-    landlord typed for this home, so it isn't asked again (never the register's address)."""
+    """A finished message: the landlord's saved details and the address they typed for this
+    home are filled in by code, so it's one click to copy or email. Never sent to the AI;
+    never the register's address."""
     p = ss.toolbox.home(d.get("home", ""))
     known = ss.get("home_addresses", {}).get(p.property_id, "") if p else ""
-    with st.form(key, border=False):
-        c1, c2 = st.columns(2)
-        name = c1.text_input(t("form_name"), key=f"{key}_name")
-        phone = c2.text_input(t("form_phone"), key=f"{key}_phone")
-        if known:
-            address = known
-            st.caption(t("form_address_known", address=known))
-        else:
-            address = st.text_input(t("form_address"), key=f"{key}_address")
-        st.form_submit_button(t("form_fill"))
-    body = fill_draft(d["body"], name, address, phone)
+    if known:
+        address = known
+        st.caption(t("form_address_known", address=known))
+    else:
+        address = st.text_input(t("form_address"), key=f"{key}_address")
+    body = fill_draft(d["body"], ss.get("me_name", ""), address, ss.get("me_phone", ""))
     st.code(f"Subject: {d['subject']}\n\n{body}", language=None)  # has a copy button
     st.link_button(t("open_email"), mailto(d["subject"], body))
+    if not ss.get("me_name"):
+        st.caption(t("details_missing"))
     st.caption(t("form_note"))
 
 
@@ -179,6 +187,8 @@ def ask(question: str) -> None:
 
 ss = st.session_state
 ss.setdefault("entries", EMPTY_ROWS)
+ss.setdefault("me_name", DEMO_LANDLORD["name"] if DEMO else "")
+ss.setdefault("me_phone", DEMO_LANDLORD["phone"] if DEMO else "")
 ss.setdefault("editor_key", 0)
 html(view.CSS)
 
@@ -274,6 +284,7 @@ if toolbox and toolbox.props:
         if c1.button(t("make_plan"), type="primary", key="make_plan", width="stretch"):
             ask(t("plan_question"))
         c2.caption(t("plan_hint"))
+    details_box()
 
     for p in toolbox.props.values():
         html(view.home_card(p, toolbox))
