@@ -34,8 +34,8 @@ def test_ui_text_follows_style_guide(key):
 
 
 def test_ui_text_takes_policy_values_from_config():
-    assert "£12,345" in text("intro", ODD) and "2 January 2028" in text("fix_early_note", ODD)
-    assert "4 March 2031" in text("problem", ODD) and "£12,345" in text("problem", ODD)
+    assert "2 January 2028" in text("fix_early_note", ODD)
+    assert "4 March 2031" in text("problem", ODD) and "£12,345" in text("tile_spend_note", ODD)
     for key, t in TEXT.items():
         assert "10,000" not in t and "2029" not in t and "2030" not in t, key
 
@@ -103,3 +103,40 @@ def test_daily_counter_caps_and_resets():
     day = date(2026, 11, 24)
     assert [c.take(day), c.take(day), c.take(day)] == [True, True, False]
     assert c.take(date(2026, 11, 25)) is True  # new day, new allowance
+
+
+# --- view (HTML pieces) ----------------------------------------------------------------------
+
+
+def test_view_escapes_landlord_labels():
+    from webapp.view import home_card
+
+    p = prop(label="<script>alert(1)</script>")
+    out = home_card(p, Toolbox([p], POLICY))
+    assert "<script>" not in out and "&lt;script&gt;" in out
+
+
+def test_every_status_has_a_colour_and_icon():
+    from report.portfolio_report import ACTIONS
+    from webapp.view import STATUS_STYLE
+
+    assert set(ACTIONS) | {"done"} <= set(STATUS_STYLE)
+
+
+def test_meter_uses_policy_threshold_and_plain_words():
+    from webapp.view import home_card, short_of_c
+
+    p = prop(score=60)
+    assert short_of_c(p, 69) == "Rating 60 · 9 short of C"
+    assert short_of_c(prop(score=72), 69) == "Rating 72 · C or better"
+    out = home_card(p, Toolbox([p], ODD))  # C line comes from the policy, not a literal
+    assert "left:70.0%" in out and "width:60.0%" in out
+    assert "About £400–£950" in out
+
+
+def test_tiles_show_portfolio_counts():
+    from webapp.view import tiles
+
+    labels = dict.fromkeys(["below", "fix_early", "over_cap", "spend", "spend_note"], "x")
+    out = tiles(Toolbox([prop(), prop("400", "Done", score=72, lock=False)], POLICY), labels)
+    assert "1 of 2" in out and "£400–£950" in out

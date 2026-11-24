@@ -28,45 +28,49 @@ from lookup.portfolio import (
 )
 from report.portfolio_report import NEEDS_INPUT_MESSAGES, Property, Step
 
-# Landlord-facing text (docs/report_style.md). {cap} and {deadline} come from the policy.
+# Landlord-facing text (docs/report_style.md). {cap}, {deadline} and {compliance} come from the
+# policy. Short and plain: the reader is a busy landlord, often on a phone.
 TEXT = {
-    "title": "Route to EPC C",
-    "intro": (
-        "Enter your rented homes in Newham. You'll see each home's rating, the cheapest way to "
-        "reach C, and whether it's likely within the {cap} cap."
-    ),
-    "entry_help": "One home per row. Add the postcode. The label is your own name for the home.",
+    "title": "Get your rentals to EPC C.",
+    "subtitle": "See which homes need work, what it might cost, and what to do first.",
+    "demo_banner": "Example: 6 real rented homes in Newham. Addresses hidden.",
+    # Pitch cards (hosted demo)
+    "user_h": "For landlords",
+    "user": "With a few rented homes and no energy adviser.",
+    "problem_h": "The problem",
+    "problem": "Rented homes would need EPC C by {compliance}. Where do you start?",
+    "solution_h": "Our answer",
+    "solution": "We find the cheapest fix for each home. An AI on Nebius explains it simply.",
+    # Entry (full app)
+    "add_homes": "Add your homes",
+    "entry_help": "One home per row. Include the postcode.",
     "check": "Check my homes",
-    "demo": "Try 6 example homes",
-    "needs_input": "Some homes need your input",
-    "pick": "Which one is it?",
-    "results": "Your homes",
-    "fix_early_note": "Fix early: a C by {deadline} should count as compliant until it expires.",
-    "report": "Download the full report",
-    "chat": "Ask about your homes",
-    "chat_placeholder": "For example: which home should I fix first?",
-    "chat_off": "The assistant is off. Add NEBIUS_API_KEY and NEBIUS_MODEL to .env to turn it on.",
-    "chat_error": "The assistant isn't available right now. The table above still works.",
-    "working": "How this answer was built",
+    "demo": "Try an example",
     "no_homes": "Add at least one home with a postcode.",
-    # Hosted demo (DEMO_MODE): the pitch, then 6 example homes. No address entry.
-    "demo_banner": (
-        "Demo: 6 real rented homes in Newham, from the public EPC register. Addresses are "
-        "hidden. Run it locally to check your own homes."
-    ),
-    "user": "**Who it's for:** a landlord with a few rented homes in Newham and no energy adviser.",
-    "problem": (
-        "**The problem:** under the government's proposals, rented homes would need EPC C by "
-        "{compliance}. Spend would be capped at {cap} per home. Which homes need work, and "
-        "what's the cheapest fix?"
-    ),
-    "solution": (
-        "**The solution:** our engine works out each home's cheapest route to C from the EPC "
-        "register. An AI agent on Nebius Token Factory explains it, using only the engine's "
-        "figures."
-    ),
-    "chat_limit": "You've used the {n} demo questions. Run the app locally to ask more.",
-    "chat_daily": "The demo has reached today's question limit. Please try again tomorrow.",
+    "needs_input": "A few homes need a closer look",
+    "pick": "Which one is it?",
+    # Results
+    "results": "Your homes",
+    "tile_below": "Below C",
+    "tile_fix_early": "Fix early",
+    "tile_over_cap": "Likely over the cap",
+    "tile_spend": "Estimated spend",
+    "tile_spend_note": "Cheapest fixes, up to {cap} a home.",
+    "fix_early_note": "Fix early: a C by {deadline} should count until the certificate expires.",
+    "see_work": "See the work",
+    "as_table": "Show as a table",
+    "report": "Download the full report",
+    # Chat
+    "chat": "Ask a question",
+    "chat_placeholder": "Ask anything about your homes",
+    "suggest_1": "Which home should I fix first?",
+    "suggest_2": "What will it cost in total?",
+    "suggest_3": "Do I have to do this by law?",
+    "working": "Where this answer came from",
+    "chat_off": "The assistant is off. Add NEBIUS_API_KEY and NEBIUS_MODEL to turn it on.",
+    "chat_error": "The assistant isn't available right now. Your results above still work.",
+    "chat_limit": "That's the {n} free questions. Run the app yourself to ask more.",
+    "chat_daily": "The demo has had a busy day. Please try again tomorrow.",
     "too_long": "Please keep questions under {n} characters.",
 }
 

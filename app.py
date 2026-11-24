@@ -1,4 +1,4 @@
-"""Streamlit demo: landlord enters homes -> table -> chat with the assistant.
+"""Streamlit demo: landlord enters homes -> results -> chat with the assistant.
 
     uv run --env-file .env streamlit run app.py              # full app, local snapshot
     DEMO_MODE=1 uv run --env-file .env streamlit run app.py  # what the hosted demo shows
@@ -9,6 +9,8 @@ only to settle an ambiguous match and never reach Nebius.
 Demo mode (the public Streamlit Cloud app): on whenever the local snapshot is missing, so a
 hosted copy can never reach register data. It serves the 6 homes in
 examples/demo_portfolio.json (no addresses), has no address entry, and caps chat questions.
+
+Look and feel: src/webapp/view.py (Apple-like styling, stat tiles, one meter per home).
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from agent.assistant import Assistant
 from agent.tools import Toolbox, property_facts
 from engine.policy import load_policy
 from report.portfolio_report import DISCLAIMER, LICENCE, render
+from webapp import view
 from webapp.logic import (
     DEMO_QUESTIONS_PER_DAY,
     DEMO_QUESTIONS_PER_VISITOR,
@@ -44,11 +47,19 @@ from webapp.logic import (
 )
 
 load_dotenv()
-st.set_page_config(page_title="Route to EPC C", layout="wide")
+st.set_page_config(page_title="Route to EPC C", page_icon="🏠", layout="centered")
 POLICY = load_policy()
 EMPTY_ROWS = [{"label": "", "address": "", "postcode": "", "uprn": ""} for _ in range(3)]
 DB_PATH = os.environ.get("DUCKDB_TARGET", "data/epc.duckdb")
 DEMO = os.environ.get("DEMO_MODE") == "1" or not Path(DB_PATH).is_file()
+
+
+def t(key: str, **extra) -> str:
+    return text(key, POLICY, **extra)
+
+
+def html(markup: str) -> None:
+    st.markdown(markup, unsafe_allow_html=True)  # markup built in view.py, user text escaped
 
 
 def secret(name: str) -> str | None:
@@ -82,7 +93,7 @@ def check(entries: list[dict]) -> None:
     rows = rows_from_entries(entries)
     if not rows:
         st.session_state.pop("toolbox", None)
-        st.warning(text("no_homes", POLICY))
+        st.warning(t("no_homes"))
         return
     resolved = resolve_rows(con(), rows)
     st.session_state.resolved = resolved
@@ -95,60 +106,83 @@ def check(entries: list[dict]) -> None:
     st.session_state.pop("bot", None)
 
 
+def ask(question: str) -> None:
+    """Send one question to the assistant, within the demo limits."""
+    if len(question) > MAX_QUESTION_CHARS:
+        st.warning(t("too_long", n=MAX_QUESTION_CHARS))
+        return
+    if DEMO and not daily_counter().take():
+        st.warning(t("chat_daily"))
+        return
+    ss.chat.append(("user", question, []))
+    with st.spinner(""):
+        try:
+            reply = ss.bot.ask(question)
+            ss.chat.append(("assistant", reply.text, reply.tool_calls))
+        except Exception:  # network, rate limit: the results still work
+            ss.chat.append(("assistant", t("chat_error"), []))
+    st.rerun()
+
+
 ss = st.session_state
 ss.setdefault("entries", EMPTY_ROWS)
 ss.setdefault("editor_key", 0)
+html(view.CSS)
 
-st.title(text("title", POLICY))
-st.caption(f"⚠️ {DISCLAIMER}")
-
+# --- Hero ---------------------------------------------------------------------------------
+html(view.hero(t("title"), t("subtitle"), t("demo_banner") if DEMO else None))
 if DEMO:
-    st.info(text("demo_banner", POLICY))
-    for key in ("user", "problem", "solution"):
-        st.markdown(text(key, POLICY))
+    html(
+        view.pitch(
+            [
+                (t("user_h"), t("user")),
+                (t("problem_h"), t("problem")),
+                (t("solution_h"), t("solution")),
+            ]  # fmt: skip
+        )
+    )
     if "toolbox" not in ss:
         ss.toolbox = Toolbox(load_demo(), POLICY)
         ss.chat = []
-else:
-    st.write(text("intro", POLICY))
 
-# --- 1. Enter homes (full app only) -----------------------------------------------------------
+# --- Enter homes (full app only) -----------------------------------------------------------
 if not DEMO:
-    st.caption(text("entry_help", POLICY))
+    html(view.section(t("add_homes")))
+    st.caption(t("entry_help"))
     edited = st.data_editor(
         ss.entries,
         num_rows="dynamic",
         width="stretch",
         key=f"editor_{ss.editor_key}",
         column_config={
-            "label": st.column_config.TextColumn("Label (optional)"),
+            "label": st.column_config.TextColumn("Your name for it"),
             "address": st.column_config.TextColumn("Address", width="large"),
             "postcode": st.column_config.TextColumn("Postcode"),
-            "uprn": st.column_config.TextColumn("UPRN (optional)"),
+            "uprn": st.column_config.TextColumn("UPRN (if you know it)"),
         },
     )
-    c1, c2, _ = st.columns([1, 1, 4])
-    if c1.button(text("check", POLICY), type="primary"):
+    c1, c2, _ = st.columns([1.2, 1.2, 3])
+    if c1.button(t("check"), type="primary"):
         ss.entries = edited
         check(edited)
-    if c2.button(text("demo", POLICY)):
+    if c2.button(t("demo")):
         ss.entries = demo_entries(con())
         ss.editor_key += 1  # a new key makes the editor show the new rows
         check(ss.entries)
         st.rerun()
 
-# --- 2. Rows that need input (full app only) -------------------------------------------------
+# --- Rows that need input (full app only) ----------------------------------------------------
 resolved = [] if DEMO else ss.get("resolved", [])
 problems = [r for r in resolved if r.status not in ("matched", "given")]
 if problems:
-    st.subheader(text("needs_input", POLICY))
+    html(view.section(t("needs_input")))
     for r in problems:
         r_label = f"{r.row.label} ({r.row.address})" if r.row.address else r.row.label
         st.markdown(f"**{r_label}**: {needs_input_message(r.status)}")
         if r.status == "ambiguous" and 1 < len(r.options) <= 8:
             # Register addresses, shown only to the landlord who typed this home.
             choice = st.selectbox(
-                text("pick", POLICY),
+                t("pick"),
                 [None, *r.options],
                 format_func=lambda o: "—" if o is None else o[1],
                 key=f"pick_{r.row.line}",
@@ -164,47 +198,62 @@ if problems:
                 check(ss.entries)
                 st.rerun()
 
-# --- 3. Results ------------------------------------------------------------------------------
+# --- Results -------------------------------------------------------------------------------
 toolbox = ss.get("toolbox")
 if toolbox and toolbox.props:
-    st.subheader(text("results", POLICY))
-    st.dataframe(table_rows(toolbox), width="stretch", hide_index=True)
-    st.caption(text("fix_early_note", POLICY))
+    html(view.section(t("results")))
+    html(
+        view.tiles(
+            toolbox,
+            {
+                "below": t("tile_below"),
+                "fix_early": t("tile_fix_early"),
+                "over_cap": t("tile_over_cap"),
+                "spend": t("tile_spend"),
+                "spend_note": t("tile_spend_note"),
+            },
+        )
+    )
 
     for p in toolbox.props.values():
+        html(view.home_card(p, toolbox))
         f = property_facts(p, POLICY)
-        with st.expander(f"{f['label']}: {f['status']}"):
-            st.write(f["next_action"])
-            route = f.get("cheapest_route")
-            if route and route["measures"]:
-                st.table(
-                    [
-                        {
-                            "Measure": m["measure"],
-                            "Rating gain": m["rating_gain"],
-                            "Cost": m["cost"],
-                            "Rating after": f"{m['band_after']} ({m['rating_after']})",
-                        }
-                        for m in route["measures"]
-                    ]
-                )
-            for line in [*f.get("caveats", []), f.get("exemption")]:
-                if line:
+        route = f.get("cheapest_route")
+        extras = [line for line in [*f.get("caveats", []), f.get("exemption")] if line]
+        if (route and route["measures"]) or extras:
+            with st.expander(t("see_work")):
+                if route and route["measures"]:
+                    st.dataframe(
+                        [
+                            {
+                                "Work": m["measure"],
+                                "Cost": m["cost"],
+                                "Rating after": f"{m['rating_after']} ({m['band_after']})",
+                            }
+                            for m in route["measures"]
+                        ],
+                        hide_index=True,
+                        width="stretch",
+                    )
+                for line in extras:
                     st.caption(line)
 
-    html = render(
+    st.caption(t("fix_early_note"))
+    with st.expander(t("as_table")):  # the accessible table view of the cards above
+        st.dataframe(table_rows(toolbox), width="stretch", hide_index=True)
+    report = render(
         list(toolbox.props.values()),
         POLICY,
-        "Your rental portfolio — route to EPC C",
+        "Your rental homes — route to EPC C",
         date.today(),
         problems,
     )
-    st.download_button(text("report", POLICY), html, "route_to_c.html", "text/html")
+    st.download_button(t("report"), report, "route_to_c.html", "text/html")
 
-    # --- 4. Chat -----------------------------------------------------------------------------
-    st.subheader(text("chat", POLICY))
+    # --- Chat ------------------------------------------------------------------------------
+    html(view.section(t("chat")))
     if not (secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL")):
-        st.info(text("chat_off", POLICY))
+        st.info(t("chat_off"))
     else:
         if "bot" not in ss:
             ss.bot = Assistant(toolbox)
@@ -212,26 +261,19 @@ if toolbox and toolbox.props:
             with st.chat_message(role):
                 st.markdown(content)
                 if calls:
-                    with st.expander(text("working", POLICY)):
+                    with st.expander(t("working")):
                         for c in calls:
                             st.code(f"{c['name']}({c['args'] or ''})", language=None)
         asked = sum(role == "user" for role, _, _ in ss.get("chat", []))
         if DEMO and asked >= DEMO_QUESTIONS_PER_VISITOR:
-            st.info(text("chat_limit", POLICY, n=DEMO_QUESTIONS_PER_VISITOR))
-        elif q := st.chat_input(text("chat_placeholder", POLICY), max_chars=MAX_QUESTION_CHARS):
-            if len(q) > MAX_QUESTION_CHARS:
-                st.warning(text("too_long", POLICY, n=MAX_QUESTION_CHARS))
-            elif DEMO and not daily_counter().take():
-                st.warning(text("chat_daily", POLICY))
-            else:
-                ss.chat.append(("user", q, []))
-                with st.spinner("…"):
-                    try:
-                        reply = ss.bot.ask(q)
-                        ss.chat.append(("assistant", reply.text, reply.tool_calls))
-                    except Exception:  # network, rate limit: the table still works
-                        ss.chat.append(("assistant", text("chat_error", POLICY), []))
-                st.rerun()
+            st.info(t("chat_limit", n=DEMO_QUESTIONS_PER_VISITOR))
+        else:
+            if not ss.get("chat"):  # suggestions until the first question
+                cols = st.columns(3)
+                for col, key in zip(cols, ("suggest_1", "suggest_2", "suggest_3"), strict=True):
+                    if col.button(t(key), key=f"btn_{key}", width="stretch"):
+                        ask(t(key))
+            if q := st.chat_input(t("chat_placeholder"), max_chars=MAX_QUESTION_CHARS):
+                ask(q)
 
-st.divider()
-st.caption(LICENCE)
+html(view.small_print(DISCLAIMER, LICENCE))
