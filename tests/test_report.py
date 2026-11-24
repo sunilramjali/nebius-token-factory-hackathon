@@ -38,7 +38,7 @@ def test_render_has_disclaimer_licence_actions_and_order():
     assert out.count("should count as compliant until it expires") == 1
     assert "register an exemption" in out
     # spend up to the cap: 400 + min(6000, 10000) .. 950 + min(17000, 10000)
-    assert "£6,400–£10,950" in out
+    assert "£6,400 to £10,950" in out
 
 
 def test_status_labels_cover_every_case():
@@ -96,7 +96,7 @@ def test_over_cap_wording_and_straddle_note():
     p = prop("O", False, True, 6000, 17000)
     p.cap_verdict_uncertain = True
     out = card(p)
-    assert "Likely over the cap: about £6,000–£17,000" in out
+    assert "Likely over the cap: about £6,000 to £17,000" in out
     assert "real quotes will decide" in out
     assert "exemption process for the 2030 rules isn't published yet" in out
 
@@ -107,7 +107,7 @@ def test_fossil_boiler_marked_and_counted_part_shown():
     p.cap_cost_low, p.cap_cost_high = 4020, 14000
     out = card(p)
     assert "(doesn't count toward the cap)" in out
-    assert "£4,020–£14,000 of this counts toward the £10,000 cap" in out
+    assert "£4,020 to £14,000 of this counts toward the £10,000 cap" in out
     assert "includes a new gas or oil boiler" in out
 
 
@@ -132,7 +132,7 @@ def test_safer_route_and_boiler_alternative_rendered():
     p.safer = [Step(1, "Loft", 4, 100, 350, 65, "D"), Step(2, "Walls", 7, 1000, 2000, 72, "C")]
     p.alternative = [Step(1, "Boiler", 9, 200, 300, 69, "C", counts_toward_cap=False)]
     out = card(p)
-    assert "Safer route: about £1,100–£2,350" in out and "aims for 72" in out
+    assert "Safer route: about £1,100 to £2,350" in out and "aims for 72" in out
     assert "Cheaper option with a boiler" in out and "£0 of this counts toward" in out
     assert "costs as of 2023" in out
 
@@ -154,7 +154,7 @@ def test_lock_in_only_with_boiler_wording():
                      Step(2, "Floor", 4, 8000, 8000, 69, "C")]  # fmt: skip
     out = render([p], POLICY, "T", TODAY)
     assert "Fix early (needs a boiler)" in out and "Decide on heating for NB" in out
-    assert "£11,000–£11,000" in out  # spend follows the within-cap boiler route
+    assert "<b>£11,000</b>" in out  # spend follows the within-cap boiler route (one figure)
 
 
 def test_sample_note_shown_only_when_given():

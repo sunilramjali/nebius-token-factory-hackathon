@@ -65,7 +65,7 @@ def test_table_rows_match_assistant_facts():
                   exempt_reason="cannot_reach_c")  # fmt: skip
     done = prop("400", "House D", score=72, lock=False)
     rows = {r["Home"]: r for r in table_rows(Toolbox([prop(), cannot, done], POLICY))}
-    assert rows["Flat A"]["Cheapest route to C"] == "£400–£950"
+    assert rows["Flat A"]["Cheapest route to C"] == "£400 to £950"
     assert rows["Flat A"]["Likely within cap"] == "Yes" and rows["Flat A"]["Fix early"] == "Yes"
     assert rows["Flat A"]["Rating gain to C"] == "9"
     # No route to C: no cost, no cap verdict.
@@ -139,7 +139,7 @@ def test_meter_uses_policy_threshold_and_plain_words():
     assert short_of_c(prop(score=72), 69) == "Rating 72 · C or better"
     out = home_card(p, Toolbox([p], ODD))  # C line comes from the policy, not a literal
     assert "left:70.0%" in out and "width:60.0%" in out
-    assert "About £400–£950" in out
+    assert "About £400 to £950" in out
 
 
 def test_tiles_show_portfolio_counts():
@@ -147,7 +147,7 @@ def test_tiles_show_portfolio_counts():
 
     labels = dict.fromkeys(["below", "fix_early", "over_cap", "spend", "spend_note"], "x")
     out = tiles(Toolbox([prop(), prop("400", "Done", score=72, lock=False)], POLICY), labels)
-    assert "1 of 2" in out and "£400–£950" in out
+    assert "1 of 2" in out and "£400 to £950" in out
 
 
 # --- next steps --------------------------------------------------------------------------

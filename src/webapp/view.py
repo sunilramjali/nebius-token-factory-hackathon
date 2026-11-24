@@ -32,7 +32,8 @@ CSS = """
 <style>
 :root {
   --ink: #1d1d1f; --ink-2: #6e6e73; --ink-3: #86868b;
-  --surface: #ffffff; --card: #f5f5f7; --hairline: rgba(0,0,0,0.08);
+  --surface: #f5f5f7; --card: #ffffff; --hairline: rgba(0,0,0,0.08);
+  --lift: 0 0 0 1px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
   --accent: #0071e3; --track: #e8e8ed;
 }
 html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
@@ -61,19 +62,21 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
   margin: 3rem 0 1rem; color: var(--ink); }
 
 .pitch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 1.5rem 0; }
-.pitch div { background: var(--card); border-radius: 18px; padding: 20px 22px; }
+.pitch div { background: var(--card); border-radius: 18px; padding: 20px 22px;
+  box-shadow: var(--lift); }
 .pitch b { display: block; font-size: 1.05rem; margin-bottom: 6px; color: var(--ink); }
 .pitch span { color: var(--ink-2); font-size: 0.97rem; line-height: 1.4; }
 
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 1rem 0; }
-.tile { background: var(--card); border-radius: 18px; padding: 18px 20px; }
+.tile { background: var(--card); border-radius: 18px; padding: 18px 20px; box-shadow: var(--lift); }
 .tile .label { font-size: 0.9rem; color: var(--ink-2); }
 .tile .value { font-size: 2rem; font-weight: 600; letter-spacing: -0.02em; color: var(--ink);
   margin-top: 4px; line-height: 1.1; }
 .tile .value.small { font-size: 1.35rem; }
 .tile .note { font-size: 0.8rem; color: var(--ink-3); margin-top: 4px; }
 
-.home { background: var(--card); border-radius: 18px; padding: 18px 22px; margin-bottom: 4px; }
+.home { background: var(--card); border-radius: 18px; padding: 18px 22px; margin-bottom: 4px;
+  box-shadow: var(--lift); }
 .home .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   flex-wrap: wrap; }
 .home .name { font-size: 1.2rem; font-weight: 600; color: var(--ink); }
@@ -110,7 +113,8 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
 [data-testid="stExpander"] details { border: none !important; background: transparent; }
 [data-testid="stExpander"] summary { padding: 4px 22px; color: var(--accent); font-size: 0.92rem; }
 [data-testid="stExpander"] summary:hover { color: #0077ed; }
-[data-testid="stChatMessage"] { background: var(--card); border-radius: 18px; }
+[data-testid="stChatMessage"] { background: var(--card); border-radius: 18px;
+  box-shadow: var(--lift); }
 
 @media (max-width: 720px) {
   .pitch { grid-template-columns: 1fr; }
@@ -205,6 +209,18 @@ def help_list(needed: list[dict]) -> str:
             f"{escape(n['find_at'])}</a></li>"
         )
     return f"<ol class='help'>{''.join(rows)}</ol>"
+
+
+def plan_home(h: dict) -> str:
+    """One home in the plan: name, status, cost and next step, then who to contact."""
+    cost = f"About {h['cheapest_cost']}" if h.get("cheapest_cost") else ""
+    return (
+        f"<div class='home'><div class='top'><span class='name'>{escape(h['home'])}</span>"
+        f"<span class='status'>{escape(h['status'])}</span></div>"
+        f"<div class='facts' style='margin-top:6px'><span>{escape(h['next_action'])}</span>"
+        f"<span class='cost'>{escape(cost)}</span></div>"
+        f"{help_list(h['contacts_in_order'])}</div>"
+    )
 
 
 def small_print(*lines: str) -> str:

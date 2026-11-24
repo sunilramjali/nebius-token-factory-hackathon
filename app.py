@@ -132,6 +132,18 @@ def draft_box(d: dict, key: str) -> None:
     st.caption(t("form_note"))
 
 
+def plan_view(plan: dict, key: str) -> None:
+    """The agent's plan: one card per home in priority order, then a message per contact.
+    Messages are rebuilt here by code, so the model never sees or edits them."""
+    for h in plan["homes"]:
+        html(view.plan_home(h))
+        p = ss.toolbox.home(h["uprn"])
+        for n in h["contacts_in_order"]:
+            with st.expander(t("plan_message_to", who=n["who"])):
+                d = draft_quote_request(p, POLICY, n["trade"])
+                draft_box(d, f"{key}_{h['uprn']}_{n['trade']}")
+
+
 def offer_draft(home_id: str, trade: str, who: str) -> None:
     """A "Write to ..." next step: built by code, no AI call, not counted as a question."""
     p = ss.toolbox.home(home_id)
@@ -146,9 +158,15 @@ def ask(question: str) -> None:
     if len(question) > MAX_QUESTION_CHARS:
         st.warning(t("too_long", n=MAX_QUESTION_CHARS))
         return
+    if DEMO and sum(r == "user" for r, _, _ in ss.get("chat", [])) >= DEMO_QUESTIONS_PER_VISITOR:
+        st.info(t("chat_limit", n=DEMO_QUESTIONS_PER_VISITOR))
+        return
     if DEMO and not daily_counter().take():
         st.warning(t("chat_daily"))
         return
+    if "bot" not in ss:
+        ss.bot = Assistant(ss.toolbox)
+    ss.setdefault("chat", [])
     ss.chat.append(("user", question, []))
     with st.spinner(""):
         try:
@@ -249,6 +267,13 @@ if toolbox and toolbox.props:
             },
         )
     )
+    # The autonomous step: one click plans every home and prepares every message.
+    needs_work = any(p.current_score < POLICY.band_c_threshold for p in toolbox.props.values())
+    if needs_work and secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL"):
+        c1, c2 = st.columns([1, 2.4], vertical_alignment="center")
+        if c1.button(t("make_plan"), type="primary", key="make_plan", width="stretch"):
+            ask(t("plan_question"))
+        c2.caption(t("plan_hint"))
 
     for p in toolbox.props.values():
         html(view.home_card(p, toolbox))
@@ -313,6 +338,8 @@ if toolbox and toolbox.props:
                 for j, c in enumerate(calls):  # drafts come straight from the tool, not the model
                     if c["name"] == "draft_quote_request" and "body" in c["result"]:
                         draft_box(c["result"], f"form_chat_{i}_{j}")
+                    if c["name"] == "make_plan" and c["result"].get("homes"):
+                        plan_view(c["result"], f"plan_{i}_{j}")
                 if calls:
                     with st.expander(t("working")):
                         for c in calls:

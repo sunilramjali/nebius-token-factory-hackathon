@@ -7,7 +7,8 @@ A landlord with 5–50 homes. Busy, not technical, often reading on a phone or a
 
 ## Plain English
 - Sentences of **25 words or fewer** (enforced). Aim for 15.
-- One idea per sentence. Lead with the point: "Fix early: about £400–£950."
+- One idea per sentence. Lead with the point: "Fix early: about £400 to £950."
+- Write cost ranges with "to", not a dash: "£400 to £950".
 - Everyday words: "about" not "approximately", "get" not "obtain", "home" not "dwelling".
 - Use numerals and £ signs: "£4,500", "2 points".
 - Use the GOV.UK style guide when unsure.

@@ -15,6 +15,7 @@ from typing import Any
 import duckdb
 
 from agent.help import ASSESSOR, TRADES, draft_quote_request, find_help
+from agent.plan import make_plan
 from engine.policy import Policy
 from report.portfolio_report import (
     CONFIDENCE_TEXT,
@@ -98,6 +99,28 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "trade": {"type": "string", "enum": [*TRADES, ASSESSOR.key]},
                 },
                 "required": ["home", "trade"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "make_plan",
+            "description": (
+                "Plan the work for every home that needs it (or one home), in priority "
+                "order: status, cost, next step, who to contact, and quote requests ready "
+                "for each. Use for 'make my plan', 'sort out Flat A', 'do it all for me'. "
+                "The app shows the plan and messages below your reply."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "home": {
+                        "type": "string",
+                        "description": "One home's label or UPRN. Leave out for all homes.",
+                    }
+                },
+                "required": [],
             },
         },
     },
@@ -306,6 +329,17 @@ class Toolbox:
             return portfolio_summary(list(self.props.values()), self.policy)
         if name == "get_rules":
             return rules(self.policy)
+        if name == "make_plan":
+            key = str(args.get("home") or "").strip()
+            if not key or key.lower() in {"all", "all homes", "everything"}:
+                return make_plan(list(self.props.values()), self.policy)
+            p = self.home(key)
+            if p is None:
+                return {
+                    "error": f"{key!r} isn't in this portfolio.",
+                    "homes": [p.label for p in self.props.values()],
+                }
+            return make_plan([p], self.policy)
         if name in ("get_property", "find_help", "draft_quote_request"):
             # Models pass the label as often as the UPRN; accept either ("uprn" for old calls).
             key = str(args.get("home") or args.get("uprn") or "").strip()

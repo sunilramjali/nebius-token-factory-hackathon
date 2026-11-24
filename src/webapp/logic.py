@@ -66,6 +66,12 @@ TEXT = {
     "follow_who": "Who do I call for {home}?",
     "follow_work": "What work does {home} need?",
     "follow_write": "Write to {who}",
+    "follow_sort": "Sort out {home} for me",
+    # The plan (autonomous step)
+    "make_plan": "Make my plan",
+    "plan_hint": "One click: a plan for every home, with messages ready. You approve each one.",
+    "plan_question": "Make a plan for all my homes and prepare the messages.",
+    "plan_message_to": "Message to {who}",
     "draft_ready": (
         "Here's a message for {who}. Add your details, then copy it or open it in your email."
     ),
@@ -294,6 +300,7 @@ def follow_ups(calls: list[dict[str, Any]], toolbox: Toolbox) -> list[dict[str, 
                                 "who": n["who"], "label_key": "follow_write"})  # fmt: skip
         elif c["name"] == "get_property" and "label" in res and res.get("gap_to_c"):
             out.append({"kind": "ask", "home": res["label"], "label_key": "follow_who"})
+            out.append({"kind": "ask", "home": res["label"], "label_key": "follow_sort"})
         elif c["name"] == "get_portfolio_summary":
             first = next((h for h in res.get("homes", []) if h["status"].startswith("Fix")), None)
             if first:

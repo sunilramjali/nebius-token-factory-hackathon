@@ -40,3 +40,11 @@ def test_scenarios_start_mid_conversation_and_plant_an_error():
     assert all(s["history"] for s in ev.SCENARIOS)
     planted = next(s for s in ev.SCENARIOS if s["id"] == "s_planted_error")
     assert planted["forbid"] == ["£500"] and "£500" in planted["history"][-1][1]
+
+
+def test_summary_counts_for_a_home_when_allowed():
+    item = {"expect": (("get_property", "get_portfolio_summary"), "Flat B", None)}
+    assert ev.expectation_met(item, reply(("get_portfolio_summary", {})), TB)
+    assert ev.expectation_met(item, reply(("get_property", {"home": "Flat B"})), TB)
+    assert not ev.expectation_met(item, reply(("get_property", {"home": "Flat A"})), TB)
+    assert not ev.expectation_met(ITEM, reply(("get_portfolio_summary", {})), TB)  # not allowed

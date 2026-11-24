@@ -101,7 +101,8 @@ def gbp(x: float | None) -> str:
 def cost_range(lo: float | None, hi: float | None) -> str:
     if lo is None:
         return "cost not given"
-    return gbp(lo) if lo == hi else f"{gbp(lo)}–{gbp(hi)}"
+    # "£400 to £950", not an en dash: easier for landlords to read (docs/report_style.md).
+    return gbp(lo) if lo == hi else f"{gbp(lo)} to {gbp(hi)}"
 
 
 SAMPLE_SQL = """
@@ -639,7 +640,7 @@ def render(
   <div class="kpi"><b>{len(below)} of {len(props)}</b>below EPC C</div>
   <div class="kpi"><b>{len(lock)}</b>worth fixing early</div>
   <div class="kpi"><b>{len(exempt)}</b>likely over the cap or can't reach C</div>
-  <div class="kpi"><b>{gbp(spend_lo)}–{gbp(spend_hi)}</b>likely spend, up to the cap
+  <div class="kpi"><b>{cost_range(spend_lo, spend_hi)}</b>likely spend, up to the cap
     ({len(spends)} of {len(below)} homes with known costs)</div>
 </div>
 

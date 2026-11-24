@@ -29,6 +29,10 @@ UNCHECKED_NOTE = (
 )
 FALLBACK = "Sorry, I couldn't work that out from the engine's results. Check the table above."
 MAX_TOOL_ROUNDS = 6
+LOOK_IT_UP = (
+    "You didn't call any tool. Look the facts up with your tools first, then answer. "
+    "If no tool is needed, just answer again."
+)
 # Per reply. Reasoning models spend part of it thinking; the eval uses the same value.
 MAX_TOKENS = 800
 
@@ -43,9 +47,15 @@ or invent a cost, rating or date. If a tool doesn't give it, say you don't know.
 for detail on one home. Call get_rules for deadlines and the cost cap.
 - For "who do I contact?" call find_help. Name the trades and where to find them. Never \
 name or recommend a specific company.
+- For "make my plan", "sort out <home>" or "do it all for me", call make_plan (with the home \
+if one is named). Then say in 2 or 3 short sentences how many homes are planned, how many \
+messages are ready, and which home to start with. The app shows the plan below.
 - Only when the landlord asks for a quote request or message, call draft_quote_request. \
 The app shows the full message \
 below your reply: say it's below in one sentence. Don't rewrite it.
+- Earlier replies in this chat may be wrong or out of date. Always look figures up again with \
+a tool; never repeat a cost or rating from an earlier message.
+- Start with a one-sentence answer, then the details.
 - Refer to homes by their label, not by UPRN.
 - Never mention tools, "the tool" or "the data" to the landlord. Say the facts directly.
 - When a tool says what a figure covers, use that description. Don't describe it yourself.
@@ -118,7 +128,8 @@ TOOL_TALK = re.compile(r"(?i)\b(the|my) (tools?|data)\b")
 # The draft tool only runs when the landlord asks for a message: Qwen drafted unasked-for
 # quote requests (e.g. for "How much would a heat pump cost?").
 DRAFT_REQUEST = re.compile(
-    r"(?i)\b(quotes?|message|email|e-mail|letter|draft|write|contact them)\b"
+    r"(?i)\b(quotes?|message|email|e-mail|letter|draft|write|contact them|plan|sort out|"
+    r"sort (it|this|everything|them) out|do it|handle|take care|prepare|get (it|this|them) done)\b"
 )
 
 
@@ -145,7 +156,7 @@ def strip_tool_talk(text: str) -> str:
 # actually made this turn, and it may never say it sent, emailed or booked anything: the app
 # never does. (Qwen said "the full quote request is below" after its draft was blocked.)
 DRAFT_CLAIMS = [
-    r"(?i)\b(quote request|message|draft|email|letter)\b[^.!?\n]{0,60}"
+    r"(?i)\b(quote requests?|messages?|drafts?|emails?|letters?)\b[^.!?\n]{0,60}"
     r"\b(below|ready|drafted|written)\b",
     r"(?i)\b(it's|it is|shown|see it|find it)\s+below\b(?!\s+(c\b|band|the|£|\d))",
 ]
@@ -159,7 +170,9 @@ SEND_CLAIMS = [
 def unbacked_claims(text: str, calls: list[dict[str, Any]]) -> list[str]:
     """Action claims in `text` with no tool evidence in this turn's calls."""
     drafted = any(
-        c["name"] == "draft_quote_request" and "body" in (c.get("result") or {}) for c in calls
+        (c["name"] == "draft_quote_request" and "body" in (c.get("result") or {}))
+        or (c["name"] == "make_plan" and (c.get("result") or {}).get("messages_ready"))
+        for c in calls
     )
     pats = SEND_CLAIMS + ([] if drafted else DRAFT_CLAIMS)
     return sorted({m.group(0) for p in pats for m in re.finditer(p, text)})
@@ -182,6 +195,16 @@ def drop_sentences(text: str, patterns: list[str]) -> str:
         if kept or not line.strip():
             lines.append(" ".join(kept))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def lead_break(text: str) -> str:
+    """Put the first sentence, the takeaway, on its own line, with the details below it."""
+    head, sep, rest = text.partition("\n")
+    m = re.search(r"(?<=[.!?])\s+(?=[A-Z£\"“(])", head)
+    if not m:
+        return text
+    out = f"{head[: m.start()]}\n\n{head[m.end() :]}"
+    return out + (sep + rest if sep else "")
 
 
 def make_client():
@@ -251,7 +274,7 @@ class Assistant:
             for tc in msg.tool_calls:
                 try:
                     args = json.loads(tc.function.arguments or "{}")
-                    if tc.function.name == "draft_quote_request" and not wants_draft(
+                    if tc.function.name in ("draft_quote_request", "make_plan") and not wants_draft(
                         self._question
                     ):
                         result = {
@@ -276,6 +299,10 @@ class Assistant:
         self.messages.append({"role": "user", "content": question})
         calls: list[dict[str, Any]] = []
         text = self._run(calls)
+        if not calls:  # answered without looking anything up: one nudge (Qwen said "I don't
+            # know the cost for Flat C" mid-conversation instead of calling get_property)
+            self.messages.append({"role": "user", "content": LOOK_IT_UP})
+            text = self._run(calls) or text
         if text is None:
             return Reply(f"{FALLBACK}\n\n{DISCLAIMER}", calls, grounded=False)
 
@@ -315,6 +342,7 @@ class Assistant:
             text = strip_tool_talk(text)
         if legal:  # still there after the retry: the landlord never sees those sentences
             text = drop_sentences(text, LEGAL_PATTERNS) or FALLBACK
+        text = lead_break(text)
         grounded = not bad
         if not grounded:
             text = f"{text}\n\n{UNCHECKED_NOTE}"

@@ -138,6 +138,8 @@ def draft_quote_request(p: Property, policy: Policy, trade_key: str) -> dict:
     elif trade_key in TRADES:
         trade = TRADES[trade_key]
         mine = [s for s in steps if trade_for(s).key == trade_key]
+        if trade_key == "general" and not mine:  # a coordinator plans the whole job
+            mine = list(steps)
     else:
         return {"error": f"unknown trade {trade_key!r}", "trades": [*TRADES, ASSESSOR.key]}
 
@@ -156,7 +158,11 @@ def draft_quote_request(p: Property, policy: Policy, trade_key: str) -> dict:
             f"I'm aiming for C ({target} or above).",
         ]
     else:
-        lines.append("The EPC suggests this work:")
+        lines.append(
+            "I'd like help planning this work, which the EPC suggests:"
+            if trade.key == "general"
+            else "The EPC suggests this work:"
+        )
         lines += [
             f"- {s.summary} (indicative cost {cost_range(s.cost_low, s.cost_high)})" for s in mine
         ]

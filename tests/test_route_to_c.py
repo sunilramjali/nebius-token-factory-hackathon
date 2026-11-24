@@ -207,7 +207,7 @@ def test_real_newham_flat_cheapest_subset_and_fossil_boiler_not_counted():
     assert [s.counts_toward_cap for s in r.steps if s.improvement_type == "I"] == [False]
     assert r.within_cap and r.lock_in_candidate and not r.likely_exempt_cost_cap
     assert r.final_score == 69 and not r.score_exact and r.borderline
-    assert r.cap_verdict_uncertain  # £4,020–£14,020 counts: spans the cap
+    assert r.cap_verdict_uncertain  # £4,020 to £14,020 counts: spans the cap
 
 
 def test_cheapest_set_beats_greedy_cost_per_point():

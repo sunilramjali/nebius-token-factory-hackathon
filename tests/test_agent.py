@@ -45,7 +45,7 @@ def test_property_facts_come_from_engine_and_report():
     f = property_facts(prop(), POLICY)
     assert f["gap_to_c"] == 9
     assert f["status"] == "Fix early"
-    assert f["cheapest_route"]["total_cost"] == "£400–£950"
+    assert f["cheapest_route"]["total_cost"] == "£400 to £950"
     assert f["cheapest_route"]["measures"][0]["rating_gain"] == 11
     assert f["next_action"].startswith("Get quotes for Flat A")
     assert "30 September 2029" in f["next_action"]
@@ -91,7 +91,7 @@ def test_portfolio_summary_totals():
                                         lo=6000, hi=17000)], POLICY)  # fmt: skip
     assert s["homes_below_c"] == 2 and s["likely_over_cap"] == 1 and s["fix_early"] == 1
     # spend stops at the cap: 400 + 6000 .. 950 + 10000
-    assert s["estimated_total_spend"] == "£6,400–£10,950"
+    assert s["estimated_total_spend"] == "£6,400 to £10,950"
 
 
 def test_cannot_reach_c_has_no_cheapest_cost():
@@ -134,7 +134,7 @@ def test_rules_use_policy_values_not_literals():
 
 
 def test_ungrounded_amounts():
-    results = [json.dumps({"total_cost": "£400–£950", "cap": "£10,000"})]
+    results = [json.dumps({"total_cost": "£400 to £950", "cap": "£10,000"})]
     assert ungrounded_amounts("About £400 to £950, under £10,000 (£10k).", results) == []
     assert ungrounded_amounts("Roughly £1,350 in total.", results) == ["£1,350"]
 
@@ -161,13 +161,17 @@ class FakeClient:
         return SimpleNamespace(choices=[SimpleNamespace(message=self.script.pop(0))])
 
 
+# A tool call first, as real answers have: without one, the agent gets a "look it up" nudge.
+LOOKUP = _msg(calls=[("get_property", '{"home": "Flat A"}')])
+
+
 def bot(script):
     return Assistant(Toolbox([prop()], POLICY), client=FakeClient(script), model="test")
 
 
 def test_tool_loop_then_answer_with_disclaimer():
     b = bot([_msg(calls=[("get_property", '{"home": "100"}')]),
-             _msg("Flat A: loft insulation, about £400–£950.")])  # fmt: skip
+             _msg("Flat A: loft insulation, about £400 to £950.")])  # fmt: skip
     r = b.ask("What should I do with Flat A?")
     assert r.grounded and [c["name"] for c in r.tool_calls] == ["get_property"]
     assert r.text.endswith(DISCLAIMER)
@@ -185,21 +189,21 @@ def test_invented_amount_gets_retry_then_flag():
 
 def test_invented_amount_fixed_on_retry():
     b = bot([_msg(calls=[("get_property", '{"home": "100"}')]),
-             _msg("It costs £1,234."), _msg("About £400–£950.")])  # fmt: skip
+             _msg("It costs £1,234."), _msg("About £400 to £950.")])  # fmt: skip
     r = b.ask("Cost?")
-    assert r.grounded and "£400–£950" in r.text and UNCHECKED_NOTE not in r.text
+    assert r.grounded and "£400 to £950" in r.text and UNCHECKED_NOTE not in r.text
 
 
 def test_legal_conclusion_gets_retry():
     # Regression: Qwen wrote "Home 4 is not exempt now" despite the prompt rule.
-    b = bot([_msg("Flat A is not exempt now."), _msg("Flat A is likely over the cap.")])
+    b = bot([LOOKUP, _msg("Flat A is not exempt now."), _msg("Flat A is likely over the cap.")])
     r = b.ask("Is Flat A exempt?")
     assert "exempt now" not in r.text and "likely over the cap" in r.text
     assert "legal conclusions" in b.client.seen[-1][-1]["content"]
 
 
 def test_legal_conclusion_dropped_if_retry_repeats_it():
-    b = bot([_msg("Flat A is not exempt."), _msg("Flat A isn't exempt. Get quotes first.")])
+    b = bot([LOOKUP, _msg("Flat A is not exempt."), _msg("Flat A isn't exempt. Get quotes first.")])
     r = b.ask("Is Flat A exempt?")
     assert "exempt." not in r.text and r.text.startswith("Get quotes first.")
 
@@ -214,7 +218,7 @@ def test_legal_patterns():
 
 def test_tool_talk_gets_one_retry():
     # Regression: Qwen kept writing "The tool states: ..." to landlords.
-    b = bot([_msg("The tool states: get quotes."), _msg("Get quotes for Flat A.")])
+    b = bot([LOOKUP, _msg("The tool states: get quotes."), _msg("Get quotes for Flat A.")])
     r = b.ask("What next?")
     assert r.text.startswith("Get quotes for Flat A.")
     assert "Don't mention the tool" in b.client.seen[-1][-1]["content"]
@@ -222,7 +226,7 @@ def test_tool_talk_gets_one_retry():
 
 def test_tool_talk_lead_in_cut_if_retry_repeats_it():
     # Regression: Qwen kept "The tool states: ..." even after the retry.
-    b = bot([_msg("The data says get quotes."), _msg("The data says get quotes.")])
+    b = bot([LOOKUP, _msg("The data says get quotes."), _msg("The data says get quotes.")])
     assert b.ask("?").text.startswith("Get quotes.")
 
 
@@ -247,7 +251,7 @@ def test_draft_tool_blocked_unless_landlord_asks():
 
 def test_draft_claim_without_a_draft_gets_retry_then_dropped():
     # Gap 1 ("did the agent do what it said?"): no draft this turn, so "it's below" is false.
-    b = bot([_msg("Flat A needs loft insulation. Your quote request is ready below."),
+    b = bot([LOOKUP, _msg("Flat A needs loft insulation. Your quote request is ready below."),
              _msg("Flat A needs loft insulation. The message is below.")])  # fmt: skip
     r = b.ask("What does Flat A need?")
     assert "no tool result behind them" in b.client.seen[-1][-1]["content"]
@@ -269,6 +273,37 @@ def test_send_claims_never_allowed():
     assert unbacked_claims("It has been emailed.", done) == ["has been emailed"]
     # Talking about ratings "below C" is not a claim.
     assert unbacked_claims("Flat A's rating is below C. It's below the cap.", []) == []
+
+
+def test_lead_break_puts_the_takeaway_on_its_own_line():
+    from agent.assistant import lead_break
+
+    text = (
+        "The total is about £16,285 to £25,100. This covers the cheapest route for each home."
+        "\n\nIt leaves out homes already at C."
+    )
+    assert lead_break(text) == (
+        "The total is about £16,285 to £25,100.\n\nThis covers the cheapest route for each "
+        "home.\n\nIt leaves out homes already at C."
+    )
+    assert lead_break("Get quotes first.") == "Get quotes first."
+    assert lead_break("Short.\n\nAlready split.") == "Short.\n\nAlready split."
+
+
+def test_answer_without_tools_gets_one_nudge():
+    # Regression: mid-conversation, Qwen said "I don't know the cost for Flat C" without
+    # calling a tool.
+    b = bot([_msg("I don't know the cost for Flat A."),
+             _msg(calls=[("get_property", '{"home": "Flat A"}')]),
+             _msg("Flat A would cost about £400 to £950.")])  # fmt: skip
+    r = b.ask("How much is Flat A?")
+    assert [c["name"] for c in r.tool_calls] == ["get_property"]
+    assert r.text.startswith("Flat A would cost about £400 to £950.")
+
+
+def test_no_tool_needed_keeps_the_second_answer():
+    b = bot([_msg("You're welcome."), _msg("You're welcome!")])
+    assert b.ask("Thanks!").text.startswith("You're welcome!")
 
 
 def test_endless_tool_calls_fall_back():

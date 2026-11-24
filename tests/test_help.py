@@ -61,7 +61,7 @@ def test_boiler_route_used_when_its_the_one_within_cap():
 def test_draft_lists_only_that_trades_work_with_costs_and_policy_target():
     p = prop(steps=[step("A", "Loft insulation", 100, 350), step("I", "New boiler")])
     d = draft_quote_request(p, ODD, "insulation")  # ODD policy: C starts at 70
-    assert "Loft insulation (indicative cost £100–£350)" in d["body"]
+    assert "Loft insulation (indicative cost £100 to £350)" in d["body"]
     assert "New boiler" not in d["body"]
     assert "C (70 or above)" in d["body"] and "[add the address]" in d["body"]
     assert d["subject"] == "Quote request: Loft insulation"
@@ -116,3 +116,14 @@ def test_mailto_has_no_recipient_and_encodes_the_message():
     link = mailto("Quote request: Loft", "Hello,\n\nA & B")
     assert link.startswith("mailto:?subject=Quote%20request%3A%20Loft&body=")
     assert "%0A" in link and "%26" in link and "@" not in link
+
+
+def test_coordinator_draft_lists_the_whole_job():
+    # Regression: a coordinator added for a borderline home got a draft with no work listed.
+    p = prop(
+        steps=[step("A", "Loft insulation"), step("E", "Low energy lighting")], borderline=True
+    )
+    assert find_help(p, POLICY)["needed"][0]["trade"] == "general"
+    body = draft_quote_request(p, POLICY, "general")["body"]
+    assert "help planning this work" in body
+    assert "- Loft insulation" in body and "- Low energy lighting" in body

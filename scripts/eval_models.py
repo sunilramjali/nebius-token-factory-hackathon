@@ -61,9 +61,13 @@ QUESTIONS = [
     ("unknown", "How much would a heat pump cost for Flat A?", "no invented costs"),
     ("help", "Who do I need to contact to get Flat A to C?", "trades from find_help"),
     ("draft", "Write me a quote request for the insulation work on Flat B.", "draft tool"),
+    ("plan", "Make a plan for all my homes and prepare the messages.", "whole-portfolio plan"),
+    ("sort", "Sort out Flat A for me.", "one-home plan"),
 ]  # fmt: skip
 # A question passes only if this tool was called (the answer must come from it).
-EXPECTED_TOOL = {"help": "find_help", "draft": "draft_quote_request"}
+EXPECTED_TOOL = {"help": "find_help", "draft": "draft_quote_request", "plan": "make_plan"}
+# Questions that must call a tool for one named home: id -> (tool, home label).
+EXPECTED_HOME = {"sort": ("make_plan", "Flat A")}
 
 # Multi-turn scenarios that start mid-conversation (an empty history hides real failures).
 # The history has no tool results in it, like a long chat where they've scrolled away, so
@@ -103,7 +107,8 @@ SCENARIOS = [
              "first. Then Flat B."),
         ],
         "question": "How much would the second one cost?",
-        "expect": ("get_property", "Flat C", None),
+        # The summary lists every home's cost, so it's a grounded way to answer too.
+        "expect": (("get_property", "get_portfolio_summary"), "Flat C", None),
         "forbid": [],
     },
     {
@@ -125,7 +130,9 @@ def as_items(questions: list[tuple[str, str, str]]) -> list[dict]:
     return [
         {"id": qid, "probe": probe, "history": [], "question": q, "forbid": [],
          "expect": (EXPECTED_TOOL[qid.split("#")[0]], None, None)
-         if qid.split("#")[0] in EXPECTED_TOOL else None}
+         if qid.split("#")[0] in EXPECTED_TOOL
+         else (*EXPECTED_HOME[qid.split("#")[0]], None)
+         if qid.split("#")[0] in EXPECTED_HOME else None}
         for qid, q, probe in questions
     ]  # fmt: skip
 
@@ -136,9 +143,12 @@ def expectation_met(item: dict, reply, toolbox: Toolbox) -> bool:
     if reply is None:
         return False
     tool, home, trade = item["expect"]
+    tools = tool if isinstance(tool, tuple) else (tool,)
     for c in reply.tool_calls:
-        if c["name"] != tool:
+        if c["name"] not in tools:
             continue
+        if c["name"] == "get_portfolio_summary":  # covers every home
+            return True
         p = toolbox.home((c["args"] or {}).get("home", ""))
         if home and (p is None or p.label != home):
             continue
