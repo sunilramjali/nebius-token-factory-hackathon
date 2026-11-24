@@ -2,6 +2,8 @@
 .env
 
 # Data & local warehouse
+# Whole folder: snapshot, evals, portfolios (docs/data_access.md §3)
+data/
 data/raw/
 *.duckdb
 *.duckdb.wal

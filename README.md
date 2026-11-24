@@ -33,7 +33,7 @@ uv run pytest
 | `src/engine/` | Route-to-C engine: cheapest set of measures reaching SAP 69, cap and lock-in flags |
 | `src/lookup/` | Address → UPRN matching (strict; wrong match is worse than none) |
 | `src/report/` | HTML portfolio report |
-| `src/agent/` | *To build:* Nebius tool-calling assistant |
+| `src/agent/` | Nebius tool-calling assistant: tools over engine output, £-amount grounding check (`python -m agent.assistant` for a terminal chat) |
 | `app.py` | *To build:* Streamlit demo |
 | `config/policy.yaml` | MEES dates, cost cap, penalties with sources |
 | `scripts/snapshot.py` | Copies the needed tables to `data/epc.duckdb` |
