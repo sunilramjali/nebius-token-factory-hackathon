@@ -232,9 +232,10 @@ def rules(policy: Policy) -> dict[str, Any]:
 class Toolbox:
     """Runs tool calls against one landlord's portfolio."""
 
-    def __init__(self, props: list[Property], policy: Policy):
+    def __init__(self, props: list[Property], policy: Policy, missing: list[str] | None = None):
         self.policy = policy
         self.props = {p.property_id: p for p in props}
+        self.missing = missing or []  # UPRNs with no engine result (shown in the app)
 
     @classmethod
     def from_db(
@@ -242,10 +243,10 @@ class Toolbox:
     ) -> Toolbox:
         """`labels`: UPRN -> the landlord's own name for the home (never a register address)."""
         ids = [str(u) for u in labels]
-        props, _ = load_properties(
+        props, missing = load_properties(
             con, ids, {str(u): lab for u, lab in labels.items()}, None, strict=False
         )
-        return cls(props, policy)
+        return cls(props, policy, missing)
 
     def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "get_portfolio_summary":

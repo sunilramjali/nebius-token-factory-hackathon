@@ -42,6 +42,7 @@ or invent a cost, rating or date. If a tool doesn't give it, say you don't know.
 - Call get_portfolio_summary before answering about the landlord's homes. Call get_property \
 for detail on one home. Call get_rules for deadlines and the cost cap.
 - Refer to homes by their label, not by UPRN.
+- Never mention tools, "the tool" or "the data" to the landlord. Say the facts directly.
 - When a tool says what a figure covers, use that description. Don't describe it yourself.
 - On exemptions, repeat only the tool's "exemption" wording. Never add conditions or criteria.
 

@@ -15,6 +15,8 @@ Usage:
   uv run --env-file .env python scripts/eval_models.py --dry-run          # cost estimate only
   uv run --env-file .env python scripts/eval_models.py --model openai/gpt-oss-120b
   uv run --env-file .env python scripts/eval_models.py --all
+  uv run --env-file .env python scripts/eval_models.py --repeat 3          # stability
+  uv run --env-file .env python scripts/eval_models.py --questions my_demo_questions.txt
 """
 
 from __future__ import annotations
@@ -42,34 +44,11 @@ from agent.assistant import (
 )
 from agent.tools import Toolbox
 from engine.policy import load_policy
+from webapp.logic import DEMO_PORTFOLIO_SQL
 
 OUT_DIR = Path("data/evals")
 MAX_WORDS = 25
 
-# One home per situation, high-confidence private rentals, picked deterministically.
-PORTFOLIO_SQL = """
-WITH base AS (
-    SELECT r.* FROM analytics.route_results r
-    JOIN marts.fct_property_compliance c USING (property_id)
-    WHERE c.is_private_rented AND r.confidence = 'high' AND r.uprn IS NOT NULL
-)
-SELECT label, uprn FROM (
-  (SELECT 'Home 1' AS label, uprn FROM base WHERE lock_in_candidate AND NOT borderline
-     AND NOT cap_verdict_uncertain AND NOT lock_in_needs_boiler ORDER BY uprn LIMIT 1)
-  UNION ALL
-  (SELECT 'Home 2', uprn FROM base WHERE lock_in_candidate AND borderline
-     AND NOT lock_in_needs_boiler AND safer_cost_mid IS NOT NULL ORDER BY uprn LIMIT 1)
-  UNION ALL
-  (SELECT 'Home 3', uprn FROM base WHERE lock_in_candidate AND cap_verdict_uncertain
-     AND NOT borderline AND NOT lock_in_needs_boiler ORDER BY uprn LIMIT 1)
-  UNION ALL
-  (SELECT 'Home 4', uprn FROM base WHERE exempt_reason = 'over_cap' ORDER BY uprn LIMIT 1)
-  UNION ALL
-  (SELECT 'Home 5', uprn FROM base WHERE exempt_reason = 'cannot_reach_c' ORDER BY uprn LIMIT 1)
-  UNION ALL
-  (SELECT 'Home 6', uprn FROM base WHERE NOT below_c ORDER BY uprn LIMIT 1)
-) ORDER BY label
-"""
 
 # (id, question, what it probes)
 QUESTIONS = [
@@ -117,10 +96,16 @@ def price(m: dict) -> tuple[float, float]:
     return float(p.get("prompt") or 0), float(p.get("completion") or 0)
 
 
-def run_model(model: str, toolbox: Toolbox, prices: tuple[float, float], max_tokens: int):
+def run_model(
+    model: str,
+    toolbox: Toolbox,
+    prices: tuple[float, float],
+    max_tokens: int,
+    questions: list[tuple[str, str, str]],
+):
     client = make_client()
     answers = []
-    for qid, question, probe in QUESTIONS:
+    for qid, question, probe in questions:
         bot = Assistant(toolbox, client=client, model=model, max_tokens=max_tokens)
         t = time.monotonic()
         try:
@@ -179,8 +164,19 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true", help="estimate cost, call no models")
     p.add_argument("--max-tokens", type=int, default=MAX_TOKENS, help="default: same as the app")
     p.add_argument("--workers", type=int, default=6)
+    p.add_argument("--repeat", type=int, default=1, help="ask every question N times")
+    p.add_argument(
+        "--questions", help="text file, one question per line (rehearse your demo questions)"
+    )
     p.add_argument("--target", default=os.environ.get("DUCKDB_TARGET", "data/epc.duckdb"))
     args = p.parse_args()
+    questions = QUESTIONS
+    if args.questions:  # rehearsal: no traps, so read the answers yourself
+        lines = [q.strip() for q in Path(args.questions).read_text().splitlines() if q.strip()]
+        questions = [(f"q{i}", q, "rehearsal") for i, q in enumerate(lines, start=1)]
+    # Repeats show how stable a model is: one run of 6 questions is thin evidence.
+    questions = [(f"{qid}#{k}" if args.repeat > 1 else qid, q, probe)
+                 for k in range(1, args.repeat + 1) for qid, q, probe in questions]  # fmt: skip
 
     catalog = {m["id"]: m for m in fetch_models()}
     if args.all:
@@ -200,22 +196,23 @@ def main() -> None:
         total = 0.0
         for m in models:
             pin, pout = price(catalog[m])
-            c = len(QUESTIONS) * (tok_in * pin + tok_out * pout)
+            c = len(questions) * (tok_in * pin + tok_out * pout)
             total += c
             print(f"{m:45s} ~${c:.4f}")
-        print(f"{len(models)} models x {len(QUESTIONS)} questions: ~${total:.2f} total")
+        print(f"{len(models)} models x {len(questions)} questions: ~${total:.2f} total")
         return
 
     con = duckdb.connect(args.target, read_only=True)
-    labels = {uprn: label for label, uprn in con.execute(PORTFOLIO_SQL).fetchall()}
+    labels = {uprn: label for label, uprn in con.execute(DEMO_PORTFOLIO_SQL).fetchall()}
     toolbox = Toolbox.from_db(con, labels, load_policy())
-    n_q = len(QUESTIONS)
+    n_q = len(questions)
     print(f"portfolio: {len(toolbox.props)} homes; {len(models)} models x {n_q} questions")
 
     results = {}
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = [
-            pool.submit(run_model, m, toolbox, price(catalog[m]), args.max_tokens) for m in models
+            pool.submit(run_model, m, toolbox, price(catalog[m]), args.max_tokens, questions)
+            for m in models
         ]
         for f in futs:
             model, answers = f.result()

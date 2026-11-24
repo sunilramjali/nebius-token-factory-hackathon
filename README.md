@@ -24,7 +24,13 @@ uv sync
 cp .env.example .env            # add NEBIUS_API_KEY and NEBIUS_MODEL
 uv run --env-file .env python scripts/snapshot.py   # one-off copy of the data from MotherDuck
 uv run pytest
+uv run --env-file .env streamlit run app.py                # the demo
 ```
+
+Model choice: `scripts/eval_models.py` scores Nebius models on landlord questions (grounding,
+wording, legal traps) with real token costs. Current pick: `Qwen/Qwen3-235B-A22B-Instruct-2507`
+(17/18 over 3 runs, about 2s and $0.70 per 1,000 questions). Rehearse demo questions with
+`--questions file.txt` and read the answers: the automatic checks don't catch every invented claim.
 
 ## Layout
 
@@ -34,7 +40,7 @@ uv run pytest
 | `src/lookup/` | Address → UPRN matching (strict; wrong match is worse than none) |
 | `src/report/` | HTML portfolio report |
 | `src/agent/` | Nebius tool-calling assistant: tools over engine output, £-amount grounding check (`python -m agent.assistant` for a terminal chat) |
-| `app.py` | *To build:* Streamlit demo |
+| `app.py` | Streamlit demo: enter homes (or try 6 example homes) → table → chat. Logic in `src/webapp/` |
 | `config/policy.yaml` | MEES dates, cost cap, penalties with sources |
 | `scripts/snapshot.py` | Copies the needed tables to `data/epc.duckdb` |
 
