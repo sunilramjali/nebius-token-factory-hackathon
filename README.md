@@ -1,16 +1,87 @@
-# Nebius Token Factory Hackathon: EPC Route-to-C
+# Route to EPC C: a Nebius Token Factory agent for small landlords
 
-An AI assistant that tells small-portfolio landlords in Newham (East London) which of their
-rental homes are below EPC C, the cheapest route to C within the £10k cost cap, and which
-ones to lock in before **30 September 2029**.
+**Live demo: https://nebius-token-factory-hackathon.streamlit.app/**
 
-**Code does the maths; the LLM explains.** A deterministic engine computes every rating,
-cost and flag from the public EPC register. An open model on
-[Nebius Token Factory](https://tokenfactory.nebius.com) answers questions using only tool
-outputs. All results are **indicative — a survey by an accredited assessor is required.**
+## One user
 
-> Policy note: EPC C for private rentals by 1 Oct 2030 is **proposed, not yet law**
-> (GOV.UK government response, 21 Jan 2026). Values live in `config/policy.yaml`.
+A landlord with **a few rented homes in Newham** (East London). They're busy, not technical,
+and don't have an energy adviser.
+
+## One problem
+
+Under the government's proposals, rented homes in England would need **EPC C by
+1 October 2030**. Spend would be capped at **£10,000 per home**, and a C reached by
+**30 September 2029** should count until that certificate expires.
+
+The landlord can't tell:
+- which of their homes are below C;
+- the cheapest way to get each one to C;
+- which homes are likely over the cap;
+- which homes to fix early.
+
+Paying an assessor to visit every home just to find out costs money and time.
+
+> These rules are **proposals, not yet law** (government response, 21 January 2026). The values
+> live in `config/policy.yaml`, with sources.
+
+## One solution
+
+The landlord enters their homes. They get a table showing each home's rating, the rating gain
+it needs, its status, the cheapest route to C and whether that's likely within the cap. Then
+they **chat with an agent on Nebius Token Factory** that explains the results in plain English.
+
+> **You:** Is Home 4 exempt?
+>
+> **Agent:** Home 4 has a likely over the cap status. You may be able to register an exemption
+> after spending up to £10,000. The exemption process for the 2030 rules isn't published yet.
+>
+> *Indicative — a survey by an accredited assessor is required. Not legal advice.*
+
+**Code does the maths; the LLM explains.** A deterministic engine works out every rating, cost
+and flag from the public EPC register. The agent only explains what the engine's tools return.
+
+## How the Nebius agent works
+
+```mermaid
+flowchart LR
+    R[(Public EPC register)] --> E[Route-to-C engine<br/>ratings, costs, cap, fix-early]
+    E --> T[Agent tools<br/>get_portfolio_summary<br/>get_property<br/>get_rules]
+    T <-->|tool calls| N[Qwen3-235B on<br/>Nebius Token Factory]
+    N --> G[Guardrails in code]
+    G --> L[Landlord]
+```
+
+- **Model:** `Qwen/Qwen3-235B-A22B-Instruct-2507`, called through the OpenAI-compatible Token
+  Factory API with tool calling (`src/agent/assistant.py`).
+- **Tools** (`src/agent/tools.py`): portfolio summary, one home in detail, and the proposed
+  rules. Every number and sentence they return comes from the engine and the report wording.
+- **Guardrails enforced in code**, not just asked for in the prompt:
+  - **Amounts are checked.** Every £ figure in a reply must appear in the tool output. If one
+    doesn't, the model gets one retry; if it's still wrong, the reply is flagged.
+  - **Legal conclusions are blocked.** Phrases like "is not exempt" or "must" trigger a retry.
+    If they're still there, those sentences are removed.
+  - **The disclaimer is always added** by code, so the model can't leave it out.
+  - **Privacy.** Register addresses never reach the model. It sees UPRNs and the landlord's
+    own labels only.
+
+### Why this model
+
+`scripts/eval_models.py` scores Token Factory models on landlord questions, including legal
+traps ("Is Home 4 exempt?", "Do I have to by law?") and a question the data can't answer. It
+uses real token costs from the models API.
+
+| Model | Passed | Time per answer | Cost per 1,000 questions |
+|---|---|---|---|
+| **Qwen3-235B-A22B-Instruct-2507** | **6/6** | **1.4s** | **$0.65** |
+| DeepSeek-V4.1-Flash | 6/6 | 4.0s | $1.45 |
+| GLM-5.3-Flash | 5/6 | 10.3s | $0.66 |
+| gpt-oss-120b | 4/6 | 1.5s | $0.60 |
+| Qwen3-30B-A3B-Instruct-2507 | 3/6 | 2.8s | $0.23 |
+| Nemotron-3.5-Lightning | 2/6 | 1.6s | $0.28 |
+
+On a repeat run of 3 rounds, Qwen passed 17 of 18 answers. All 18 had correct amounts and no
+legal conclusions. Reading the answers by hand also found bugs the scores missed, such as an
+invented exemption rule. They're fixed, with regression tests.
 
 ## Origin
 
@@ -36,10 +107,9 @@ copy can never reach register data. It shows 6 example homes from
 per visitor and 300 a day. Set `NEBIUS_API_KEY` and `NEBIUS_MODEL` in the app's Secrets.
 Preview it locally with `DEMO_MODE=1`.
 
-Model choice: `scripts/eval_models.py` scores Nebius models on landlord questions (grounding,
-wording, legal traps) with real token costs. Current pick: `Qwen/Qwen3-235B-A22B-Instruct-2507`
-(17/18 over 3 runs, about 2s and $0.70 per 1,000 questions). Rehearse demo questions with
-`--questions file.txt` and read the answers: the automatic checks don't catch every invented claim.
+Re-run the model comparison with `uv run --env-file .env python scripts/eval_models.py`. Use
+`--repeat 3` to check stability, or `--questions file.txt` to rehearse your own questions. Read
+the answers too: the automatic checks don't catch every invented claim.
 
 ## Layout
 
@@ -52,6 +122,8 @@ wording, legal traps) with real token costs. Current pick: `Qwen/Qwen3-235B-A22B
 | `app.py` | Streamlit demo: enter homes (or try 6 example homes) → table → chat. Logic in `src/webapp/` |
 | `config/policy.yaml` | MEES dates, cost cap, penalties with sources |
 | `scripts/snapshot.py` | Copies the needed tables to `data/epc.duckdb` |
+| `scripts/eval_models.py` | Scores Nebius models on landlord questions, with real costs |
+| `scripts/export_demo.py` | Writes the hosted demo's 6 homes to `examples/demo_portfolio.json` (no addresses) |
 
 ## Data and licence
 
