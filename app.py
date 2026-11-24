@@ -304,130 +304,143 @@ if problems:
 # --- Results -------------------------------------------------------------------------------
 toolbox = ss.get("toolbox")
 if toolbox and toolbox.props:
-    html(view.section(t("results")))
-    html(
-        view.tiles(
-            toolbox,
-            {
-                "below": t("tile_below"),
-                "fix_early": t("tile_fix_early"),
-                "over_cap": t("tile_over_cap"),
-                "spend": t("tile_spend"),
-                "spend_note": t("tile_spend_note"),
-            },
+    # Results on the left; the chat stays in view on the right while the page scrolls.
+    left, right = st.columns([1.45, 1], gap="large")
+    with left:
+        html(view.section(t("results")))
+        html(
+            view.tiles(
+                toolbox,
+                {
+                    "below": t("tile_below"),
+                    "fix_early": t("tile_fix_early"),
+                    "over_cap": t("tile_over_cap"),
+                    "spend": t("tile_spend"),
+                    "spend_note": t("tile_spend_note"),
+                },
+            )
         )
-    )
-    # The autonomous step: one click plans every home and prepares every message.
-    needs_work = any(p.current_score < POLICY.band_c_threshold for p in toolbox.props.values())
-    if needs_work and secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL"):
-        c1, c2 = st.columns([1, 2.4], vertical_alignment="center")
-        if c1.button(t("make_plan"), type="primary", key="make_plan", width="stretch"):
-            ask(t("plan_question"))
-        c2.caption(t("plan_hint"))
-    details_box()
+        # The autonomous step: one click plans every home and prepares every message.
+        needs_work = any(p.current_score < POLICY.band_c_threshold for p in toolbox.props.values())
+        if needs_work and secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL"):
+            c1, c2 = st.columns([1, 2.4], vertical_alignment="center")
+            if c1.button(t("make_plan"), type="primary", key="make_plan", width="stretch"):
+                ask(t("plan_question"))
+            c2.caption(t("plan_hint"))
+        details_box()
 
-    for p in toolbox.props.values():
-        html(view.home_card(p, toolbox))
-        f = property_facts(p, POLICY)
-        route = f.get("cheapest_route")
-        extras = [line for line in [*f.get("caveats", []), f.get("exemption")] if line]
-        help_ = find_help(p, POLICY)["needed"]
-        if (route and route["measures"]) or extras or help_:
-            with st.expander(t("see_work")):
-                if route and route["measures"]:
-                    st.dataframe(
-                        [
-                            {
-                                "Work": m["measure"],
-                                "Cost": m["cost"],
-                                "Rating after": f"{m['rating_after']} ({m['band_after']})",
-                            }
-                            for m in route["measures"]
-                        ],
-                        hide_index=True,
-                        width="stretch",
-                    )
-                for line in extras:
-                    st.caption(line)
-                if help_:
-                    # "Who to contact": official registers only, and a draft to copy.
-                    st.markdown(f"**{t('who_to_contact')}**")
-                    html(view.help_list(help_))
-                    choice = st.selectbox(
-                        t("draft_for"),
-                        [None, *help_],
-                        format_func=lambda h: "—" if h is None else h["who"].capitalize(),
-                        key=f"draft_{p.property_id}",
-                    )
-                    if choice is not None:
-                        d = draft_quote_request(p, POLICY, choice["trade"])
-                        st.caption(t("draft_note"))
-                        draft_box(d, f"form_{p.property_id}_{choice['trade']}")
+        for p in toolbox.props.values():
+            html(view.home_card(p, toolbox))
+            f = property_facts(p, POLICY)
+            route = f.get("cheapest_route")
+            extras = [line for line in [*f.get("caveats", []), f.get("exemption")] if line]
+            help_ = find_help(p, POLICY)["needed"]
+            if (route and route["measures"]) or extras or help_:
+                with st.expander(t("see_work")):
+                    if route and route["measures"]:
+                        st.dataframe(
+                            [
+                                {
+                                    "Work": m["measure"],
+                                    "Cost": m["cost"],
+                                    "Rating after": f"{m['rating_after']} ({m['band_after']})",
+                                }
+                                for m in route["measures"]
+                            ],
+                            hide_index=True,
+                            width="stretch",
+                        )
+                    for line in extras:
+                        st.caption(line)
+                    if help_:
+                        # "Who to contact": official registers only, and a draft to copy.
+                        st.markdown(f"**{t('who_to_contact')}**")
+                        html(view.help_list(help_))
+                        choice = st.selectbox(
+                            t("draft_for"),
+                            [None, *help_],
+                            format_func=lambda h: "—" if h is None else h["who"].capitalize(),
+                            key=f"draft_{p.property_id}",
+                        )
+                        if choice is not None:
+                            d = draft_quote_request(p, POLICY, choice["trade"])
+                            st.caption(t("draft_note"))
+                            draft_box(d, f"form_{p.property_id}_{choice['trade']}")
 
-    st.caption(t("fix_early_note"))
-    with st.expander(t("as_table")):  # the accessible table view of the cards above
-        st.dataframe(table_rows(toolbox), width="stretch", hide_index=True)
-    report = render(
-        list(toolbox.props.values()),
-        POLICY,
-        "Your rental homes — route to EPC C",
-        date.today(),
-        problems,
-    )
-    st.download_button(t("report"), report, "route_to_c.html", "text/html")
+        st.caption(t("fix_early_note"))
+        with st.expander(t("as_table")):  # the accessible table view of the cards above
+            st.dataframe(table_rows(toolbox), width="stretch", hide_index=True)
+        report = render(
+            list(toolbox.props.values()),
+            POLICY,
+            "Your rental homes — route to EPC C",
+            date.today(),
+            problems,
+        )
+        st.download_button(t("report"), report, "route_to_c.html", "text/html")
 
-    # --- Chat ------------------------------------------------------------------------------
-    html(view.section(t("chat")))
-    if not (secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL")):
-        st.info(t("chat_off"))
-    else:
-        if "bot" not in ss:
-            ss.bot = Assistant(toolbox)
-        for i, (role, content, calls) in enumerate(ss.get("chat", [])):
-            with st.chat_message(role):
-                st.markdown(content)
-                for j, c in enumerate(calls):  # drafts come straight from the tool, not the model
-                    if c["name"] == "draft_quote_request" and "body" in c["result"]:
-                        draft_box(c["result"], f"form_chat_{i}_{j}")
-                    if c["name"] == "make_plan" and c["result"].get("homes"):
-                        plan_view(c["result"], f"plan_{i}_{j}")
-                # Only the last plan that passed the code check is shown.
-                checks = [c for c in calls if c["name"] == "check_budget_plan"
-                          and c["result"].get("passed")]  # fmt: skip
-                if checks:
-                    budget_view(checks[-1]["result"], f"budget_{i}")
-                if calls:
-                    with st.expander(t("working")):
-                        for c in calls:
-                            st.code(f"{c['name']}({c['args'] or ''})", language=None)
-        chat = ss.get("chat", [])
-        over_limit = DEMO and sum(r == "user" for r, _, _ in chat) >= DEMO_QUESTIONS_PER_VISITOR
-        if chat and chat[-1][0] == "assistant":  # next steps, picked by code from the tools used
-            steps = [
-                f
-                for f in follow_ups(chat[-1][2], toolbox)
-                if f["kind"] == "draft" or not over_limit
-            ]
-            if steps:
-                st.caption(t("next_steps"))
-                cols = st.columns(len(steps))
-                for k, (col, f) in enumerate(zip(cols, steps, strict=True)):
-                    label = t(f["label_key"], home=f.get("home", ""), who=f.get("who", ""))
-                    if col.button(label, key=f"next_{len(chat)}_{k}", width="stretch"):
-                        if f["kind"] == "draft":
-                            offer_draft(f["home"], f["trade"], f["who"])
-                        else:
-                            ask(label)
-        asked = sum(role == "user" for role, _, _ in ss.get("chat", []))
-        if DEMO and asked >= DEMO_QUESTIONS_PER_VISITOR:
-            st.info(t("chat_limit", n=DEMO_QUESTIONS_PER_VISITOR))
+    with right, st.container(key="chat_panel"):
+        # --- Chat ------------------------------------------------------------------------------
+        html(view.section(t("chat")))
+        if not (secret("NEBIUS_API_KEY") and secret("NEBIUS_MODEL")):
+            st.info(t("chat_off"))
         else:
-            if not ss.get("chat"):  # suggestions until the first question
-                cols = st.columns(3)
-                for col, key in zip(cols, ("suggest_1", "suggest_2", "suggest_3"), strict=True):
-                    if col.button(t(key), key=f"btn_{key}", width="stretch"):
-                        ask(t(key))
-            if q := st.chat_input(t("chat_placeholder"), max_chars=MAX_QUESTION_CHARS):
-                ask(q)
+            if "bot" not in ss:
+                ss.bot = Assistant(toolbox)
+            # Messages scroll inside the panel, newest in view; no empty box before the first.
+            log = (
+                st.container(height=560, autoscroll=True, border=False, key="chat_log")
+                if ss.get("chat")
+                else st.container()
+            )
+            for i, (role, content, calls) in enumerate(ss.get("chat", [])):
+                with log, st.chat_message(role):
+                    st.markdown(content)
+                    for j, c in enumerate(
+                        calls
+                    ):  # drafts come straight from the tool, not the model
+                        if c["name"] == "draft_quote_request" and "body" in c["result"]:
+                            draft_box(c["result"], f"form_chat_{i}_{j}")
+                        if c["name"] == "make_plan" and c["result"].get("homes"):
+                            plan_view(c["result"], f"plan_{i}_{j}")
+                    # Only the last plan that passed the code check is shown.
+                    checks = [c for c in calls if c["name"] == "check_budget_plan"
+                              and c["result"].get("passed")]  # fmt: skip
+                    if checks:
+                        budget_view(checks[-1]["result"], f"budget_{i}")
+                    if calls:
+                        with st.expander(t("working")):
+                            for c in calls:
+                                st.code(f"{c['name']}({c['args'] or ''})", language=None)
+            chat = ss.get("chat", [])
+            over_limit = DEMO and sum(r == "user" for r, _, _ in chat) >= DEMO_QUESTIONS_PER_VISITOR
+            if (
+                chat and chat[-1][0] == "assistant"
+            ):  # next steps, picked by code from the tools used
+                steps = [
+                    f
+                    for f in follow_ups(chat[-1][2], toolbox)
+                    if f["kind"] == "draft" or not over_limit
+                ]
+                if steps:
+                    st.caption(t("next_steps"))
+                    for k, f in enumerate(steps):
+                        label = t(f["label_key"], home=f.get("home", ""), who=f.get("who", ""))
+                        if st.button(label, key=f"next_{len(chat)}_{k}", width="stretch"):
+                            if f["kind"] == "draft":
+                                offer_draft(f["home"], f["trade"], f["who"])
+                            else:
+                                ask(label)
+            asked = sum(role == "user" for role, _, _ in ss.get("chat", []))
+            if DEMO and asked >= DEMO_QUESTIONS_PER_VISITOR:
+                st.info(t("chat_limit", n=DEMO_QUESTIONS_PER_VISITOR))
+            else:
+                if not ss.get("chat"):  # suggestions until the first question
+                    for key in ("suggest_1", "suggest_2", "suggest_3"):
+                        if st.button(t(key), key=f"btn_{key}", width="stretch"):
+                            ask(t(key))
+                if q := st.chat_input(t("chat_placeholder"), max_chars=MAX_QUESTION_CHARS):
+                    ask(q)
+
 
 html(view.small_print(DISCLAIMER, LICENCE))

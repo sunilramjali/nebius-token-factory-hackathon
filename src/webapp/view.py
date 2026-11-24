@@ -49,7 +49,7 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
     "Helvetica Neue", Helvetica, Arial, sans-serif !important;
 }
 #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-.block-container { max-width: 980px; padding-top: 2.5rem; padding-bottom: 4rem; }
+.block-container { max-width: 1320px; padding-top: 2.5rem; padding-bottom: 4rem; }
 
 .hero { text-align: center; padding: 2.5rem 0 1.5rem; }
 .hero h1 { font-size: clamp(2.4rem, 6vw, 3.6rem); font-weight: 600; letter-spacing: -0.02em;
@@ -116,7 +116,15 @@ html, body, [class*="css"], .stMarkdown, .stButton button, input, textarea {
 [data-testid="stChatMessage"] { background: var(--card); border-radius: 18px;
   box-shadow: var(--lift); }
 
+/* The chat panel stays in view while the homes scroll; its messages scroll inside it. */
+[data-testid="stColumn"]:has(.st-key-chat_panel) { position: sticky; top: 1rem;
+  align-self: flex-start; }
+.st-key-chat_panel .section-title { margin-top: 3rem; }
+.st-key-chat_log { height: calc(100vh - 19rem) !important; min-height: 280px; }
+
 @media (max-width: 720px) {
+  [data-testid="stColumn"]:has(.st-key-chat_panel) { position: static; }
+  .st-key-chat_log { height: 60vh !important; }
   .pitch { grid-template-columns: 1fr; }
   .tiles { grid-template-columns: repeat(2, 1fr); }
 }
