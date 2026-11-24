@@ -1,0 +1,36 @@
+[project]
+name = "nebius-token-factory-hackathon"
+version = "0.1.0"
+description = "Nebius Token Factory Hackathon: EPC Route-to-C AI assistant over a deterministic route-to-C engine. Indicative, not advice."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb==1.5.6",  # pinned: matches MotherDuck (used once, for the snapshot)
+    "openai>=1.50",   # Nebius Token Factory is OpenAI-compatible
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+    "streamlit>=1.40",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ingest", "src/engine", "src/report", "src/lookup"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

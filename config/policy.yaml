@@ -1,0 +1,103 @@
+# MEES policy rules for privately rented homes (England & Wales).
+# Every rule carries a source and last_verified date. Change values here, not in code.
+# Status: government response published 21 Jan 2026. NOT yet law; primary legislation and a
+# statutory instrument are still to come (aim: in force 2027). Re-verify before relying on these.
+
+sources:
+  gov_response: &gov_response
+    title: "Improving the energy performance of privately rented homes: government response"
+    url: "https://www.gov.uk/government/consultations/improving-the-energy-performance-of-privately-rented-homes-2025-update/outcome/improving-the-energy-performance-of-privately-rented-homes-government-response-html"
+    published: 2026-01-21
+
+legal_status:
+  value: "proposed"   # proposed | laid | in_force
+  note: "Government will seek new powers by Act of Parliament, then lay an SI aiming to come into force in 2027."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+current_minimum_band:
+  value: "E"
+  note: "Existing 2015 regulations (EPC E minimum)."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+compliance_deadline:
+  value: 2030-10-01
+  note: "Single compliance date for all in-scope tenancies. Target is EPC C on the NEW EPC metrics (primary fabric standard, then landlord's choice of heating-system or smart-readiness standard). Exact new-metric bands still to be confirmed."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+lock_in:
+  # The product's hook. Reaching C on the CURRENT Energy Efficiency Rating before this date
+  # counts as compliant with the higher standard until that EPC expires or is replaced.
+  deadline_inclusive: 2029-09-30
+  required_band: "C"
+  metric: "energy_efficiency_rating"   # current EER (SAP-based) scale
+  compliant_until: "epc_expiry_or_replacement"
+  epc_validity_years: 10
+  note: "Landlords have 'up to and inclusive of 30 September 2029' to reach EER C."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+band_c_threshold:
+  value: 69     # EER/SAP score: C = 69–80
+  note: "Current EER band boundaries. Not from the gov response; standard SAP banding (A 92+, B 81–91, C 69–80, D 55–68, E 39–54, F 21–38, G 1–20)."
+  source:
+    title: "Standard Assessment Procedure (SAP) rating bands"
+    url: "https://www.gov.uk/guidance/standard-assessment-procedure"
+  last_verified: null   # TODO: confirm against a primary source
+
+cost_cap:
+  amount_gbp: 10000
+  period_years: 10
+  qualifying_spend_from: 2025-10-01
+  low_value_rule:
+    applies_below_property_value_gbp: 100000
+    cap_pct_of_value: 10   # cap = min(£10,000, 10% of property value)
+    note: "Property Value Adjustment exemption; example: £5,500 cap at £55,000 value. Valuation benchmark starts in 2030."
+  includes_epc_assessment_costs: true   # 'reasonable' amount, max to be set in legislation
+  includes_third_party_funding: true    # incl. government schemes...
+  excludes:
+    - "Boiler Upgrade Scheme (BUS) funding"
+    - "Spend on installing fossil fuel heating"
+  # How the engine applies "fossil fuel heating" to EPC recommendation types (ADR-011).
+  # Our mapping, not the government's: types whose register summary installs a gas/oil/LPG
+  # boiler. Seen in Newham data: I "Replace boiler with new condensing boiler",
+  # T "Change heating to gas condensing boiler", S "Change room heaters to condensing boiler".
+  # T2 (flue gas heat recovery) is an add-on, not a heating install, so it still counts.
+  # Any type not listed counts toward the cap.
+  fossil_heating_improvement_types: ["I", "S", "T"]
+  note: "Spend 1 Oct 2025 – 30 Sep 2029 on EPC-recommended measures counts."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+exemptions:
+  cost_cap_years: 10
+  property_value_adjustment_years: 10
+  negative_impacts_years: 10
+  other_default_years: 5
+  third_party_consent: "up to 5 years or until the refusing tenant leaves"
+  new_landlord_grace_months: 6
+  source: *gov_response
+  last_verified: 2026-11-06
+
+max_penalty:
+  amount_gbp: 30000
+  basis: "per property, per breach"
+  note: "Requires new primary legislation. Local authorities enforce from 2030."
+  source: *gov_response
+  last_verified: 2026-11-06
+
+new_epc_methodology:
+  name: "Home Energy Model (HEM)"
+  target_start: 2026-10
+  status: "aim — government called the timeline 'ambitious'; go-live not confirmed"
+  new_metrics: ["energy cost", "fabric performance", "heating system", "smart readiness"]
+  source: *gov_response
+  last_verified: 2026-11-06
+
+scope:
+  short_term_lets_excluded: true
+  note: "Short-term lets not in scope 'at this time'; under review."
+  source: *gov_response
+  last_verified: 2026-11-06
