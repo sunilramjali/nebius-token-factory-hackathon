@@ -29,7 +29,8 @@ def test_render_has_disclaimer_licence_actions_and_order():
     pricey = prop("Pricey", False, True, 6000, 17000)
     out = render([pricey, cheap], POLICY, "Test", TODAY)
 
-    assert "a survey by an accredited energy assessor is required" in out
+    assert "A survey by an accredited energy assessor is required" in out
+    assert "current EPC certificate" in out  # says where the estimates come from
     assert "Open Government Licence v3.0" in out
     assert "Cheap &lt;home&gt;" in out  # escaped
     assert out.index("Cheap &lt;home&gt;") < out.index("Pricey")  # fix-early first

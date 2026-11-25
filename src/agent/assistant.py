@@ -23,7 +23,10 @@ from typing import Any
 from agent.tools import TOOL_SPECS, Toolbox
 
 DEFAULT_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
-DISCLAIMER = "Indicative — a survey by an accredited assessor is required. Not legal advice."
+DISCLAIMER = (
+    "Estimates from your current EPC certificate. A survey by an accredited assessor is required. "
+    "Not legal advice."
+)
 UNCHECKED_NOTE = (
     "Some amounts above couldn't be matched to the engine's figures. Check them in the table."
 )

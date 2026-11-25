@@ -30,8 +30,8 @@ from engine.policy import Policy, load_policy
 from lookup.portfolio import Resolved, resolve_csv
 
 DISCLAIMER = (
-    "Indicative only — a survey by an accredited energy assessor is required before any "
-    "works. This is not legal or compliance advice."
+    "Estimates from each home's current EPC certificate. A survey by an accredited energy "
+    "assessor is required before any works. This is not legal or compliance advice."
 )
 LICENCE = (
     "Contains public sector information from the EPC register licensed under the Open "

@@ -53,15 +53,39 @@ in plain English, and get a next step.
 > **Agent:** House A has a likely over the cap status. You may be able to register an exemption
 > after spending up to £10,000. The exemption process for the 2030 rules isn't published yet.
 >
-> *Indicative — a survey by an accredited assessor is required. Not legal advice.*
+> *Estimates from your current EPC certificate. A survey by an accredited assessor is required. Not legal advice.*
 
 **Code does the maths; the LLM explains.** A deterministic engine works out every rating, cost
 and flag from the public EPC register. The agent only explains what the engine's tools return.
 
+## Demo in 60 seconds: one landlord
+
+**Who it's for.** Sam is an example landlord with six rented homes in Newham and no energy
+adviser. The live demo opens on Sam's homes (property type only, no addresses).
+
+**How Sam benefits: spend less, in the right order.** Everything below comes from the homes'
+EPC certificates, worked out by code:
+
+| Home | What Sam learns | Money |
+|---|---|---|
+| Flat A | One measure takes it from 60 to 77, a C | Start here: £800 to £1,200 |
+| House B | Already a C | Spend nothing |
+| House A | Likely over the £10,000 cap | Ask an assessor before spending; an exemption may be possible |
+| Flat D | Its measures don't reach C | Survey first, before spending |
+| All homes | Likely total, cheapest routes | £16,285 to £25,100, known before any quote |
+
+Then ask the agent:
+1. **"Which home should I fix first?"** It says Flat A: cheapest, and marked Fix early.
+2. **"I have £8,000 to spend. What should I do?"** The agent picks an option per home and code
+   checks it. Using the middle of each cost range, £5,000 gets 2 homes to C, and £8,000 still
+   gets 2. The extra money buys no more Cs yet.
+3. **"Make my plan."** Who to call for each home, in work order, with a message ready to send.
+
 ## Who benefits
 
 - **Landlords** get clear answers before paying for anything: which homes are below C, the
-  cheapest fix, a likely cost, who to call, and a plan that fits their budget.
+  cheapest fix, a likely cost, who to call, and a plan that fits their budget. Money goes to
+  the cheapest wins first, not to homes that are already C or likely over the cap.
 - **Tenants** get warmer homes sooner: cheap fixes are flagged to do first, so homes can reach C
   before the 2030 deadline.
 - **Assessors and trades** get a landlord who arrives with a clear brief (the home, the job and

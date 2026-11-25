@@ -175,6 +175,8 @@ def test_tool_loop_then_answer_with_disclaimer():
     r = b.ask("What should I do with Flat A?")
     assert r.grounded and [c["name"] for c in r.tool_calls] == ["get_property"]
     assert r.text.endswith(DISCLAIMER)
+    # The label says where the numbers come from, and still asks for a survey.
+    assert "current EPC certificate" in DISCLAIMER and "accredited assessor" in DISCLAIMER
     tool_msg = b.client.seen[1][-1]
     assert tool_msg["role"] == "tool" and tool_msg["tool_call_id"] == "c0"
 

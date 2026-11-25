@@ -95,7 +95,7 @@ def test_proposed_rules_are_hedged():
     assert "They are not yet law." in text
     assert "Check the final rules before acting." in text
     assert "not legal or compliance advice" in text
-    assert "a survey by an accredited energy assessor is required" in text
+    assert "A survey by an accredited energy assessor is required" in text
 
 
 def test_policy_values_are_never_hard_coded():
