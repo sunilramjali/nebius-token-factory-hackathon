@@ -7,8 +7,9 @@
 **In 30 seconds:** a small landlord sees which homes are below EPC C and what the cheapest fix
 costs. Then an agent on Nebius Token Factory (Qwen3-235B, 8 tools) answers questions, makes a
 plan for every home or one that fits their budget, and gets a message ready for each trade.
-Code does the maths and checks the agent's work. Final eval: **30 of 30**, 1.7s per answer,
-$1.32 per 1,000 questions. 254 automated tests.
+Code does the maths and checks the agent's work. Six models took the same final test: Qwen3-235B
+passed **30 of 30** and was the fastest of the three that did (1.7s per answer, $1.32 per 1,000
+questions). 254 automated tests.
 
 ## One user
 
@@ -57,7 +58,35 @@ in plain English, and get a next step.
 **Code does the maths; the LLM explains.** A deterministic engine works out every rating, cost
 and flag from the public EPC register. The agent only explains what the engine's tools return.
 
-## How the Nebius agent works
+## Who benefits
+
+- **Landlords** get clear answers before paying for anything: which homes are below C, the
+  cheapest fix, a likely cost, who to call, and a plan that fits their budget.
+- **Tenants** get warmer homes sooner: cheap fixes are flagged to do first, so homes can reach C
+  before the 2030 deadline.
+- **Assessors and trades** get a landlord who arrives with a clear brief (the home, the job and
+  a ready message), found through official registers only.
+
+## How the AI is used
+
+The model is **Qwen3-235B on Nebius Token Factory**. It does four jobs:
+
+1. **Chooses.** It reads the question and decides which of the 8 tools to call, and in what
+   order.
+2. **Explains.** It turns tool results into short, plain-English answers that follow our style
+   guide (`docs/report_style.md`).
+3. **Decides.** In "Plan to my budget" it picks an option for each home. Code checks the plan,
+   and the model revises until it passes.
+4. **Follows the conversation.** It handles a bare "yes" or "the second one", and re-checks a
+   wrong figure from earlier in the chat.
+
+**What it never does:** the maths, the ratings, the costs or a legal verdict. Code does those,
+and code checks every reply before the landlord sees it (see Guardrails below).
+
+## How it's made
+
+Python, DuckDB (a local copy of the EPC register) and Streamlit, with the OpenAI SDK pointed at
+Token Factory. 254 automated tests (`uv run pytest`).
 
 ```mermaid
 flowchart LR
@@ -105,28 +134,35 @@ uses real token costs from the models API. Each answer must use a tool, have eve
 the tool output, and pass the wording rules (no legal conclusions, sentences of 25 words or
 fewer).
 
-**Final build (24 November 2026):** Qwen3-235B passed **30 of 30**. That's 15 questions, each
-asked twice, at **1.7s per answer** and **$1.32 per 1,000 questions**. The questions include:
+**Final test, six models, same code (24–25 November 2026):** 15 questions, each asked twice.
+The questions include:
 - the legal traps and the unanswerable question;
 - who to call, a quote request, "Make a plan for all my homes" and "Sort out Flat A";
 - a budget plan, which must pass the code check and match the best possible result;
 - 4 scenarios that start mid-conversation: a bare "yes", "the second one", and an earlier
   reply with a planted wrong cost the agent must re-check.
 
-**Round 1, choosing the model** (6 shorter questions, so costs are lower):
-
 | Model | Passed | Time per answer | Cost per 1,000 questions |
 |---|---|---|---|
-| **Qwen3-235B-A22B-Instruct-2507** | **6/6** | **1.4s** | **$0.65** |
-| DeepSeek-V4.1-Flash | 6/6 | 4.0s | $1.45 |
-| GLM-5.3-Flash | 5/6 | 10.3s | $0.66 |
-| gpt-oss-120b | 4/6 | 1.5s | $0.60 |
-| Qwen3-30B-A3B-Instruct-2507 | 3/6 | 2.8s | $0.23 |
-| Nemotron-3.5-Lightning | 2/6 | 1.6s | $0.28 |
+| **Qwen3-235B-A22B-Instruct-2507** (our pick) | **30/30** | **1.7s** | **$1.32** |
+| Qwen3-30B-A3B-Instruct-2507 | 30/30 | 3.5s | $0.64 |
+| DeepSeek-V4.1-Flash | 30/30 | 5.2s | $2.27 |
+| gpt-oss-120b | 28/30 | 1.2s | $0.77 |
+| Nemotron-3.5-Lightning | 28/30 | 1.8s | $0.62 |
+| GLM-5.3-Flash | 28/30 | 4.7s | $0.98 |
 
-Qwen3-235B passed everything and was the fastest of the top two. Reading the answers by hand
-also found bugs the scores missed, such as an invented exemption rule. They're fixed, with
-regression tests.
+Three models passed everything. Qwen3-235B was the fastest of them, which matters in a chat.
+Qwen3-30B also passed, at half the cost but twice as slow: a good option if cost matters more
+than speed. The misses were real slips: sentences over 25 words, two budget questions the
+model gave up on, and a one-home plan made without the plan tool.
+
+**To be fair about it:** we picked Qwen3-235B in an earlier round (6 shorter questions), then
+tuned the prompts and code checks over about 13 runs on Qwen alone. The other models first
+took the final test on 25 November. So this isn't a fully equal contest, and a rival's misses
+may partly reflect that tuning.
+
+Reading the answers by hand also found bugs the scores missed, such as an invented exemption
+rule. They're fixed, with regression tests.
 
 ## Origin
 
